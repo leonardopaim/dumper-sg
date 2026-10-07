@@ -1,0 +1,3 @@
+interface:
+  display_name: "Core Go para web local"
+  short_description: "Core testável, API local e frontends independentes"

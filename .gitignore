@@ -32,3 +32,15 @@ app/backups/*
 Thumbs.db
 Desktop.ini
 
+# Go/web local
+node_modules/
+coverage/
+*.test.exe
+/data/
+/logs/
+/backups/
+
+# Keep an empty embed directory in source checkouts
+!/web/dist/
+/web/dist/*
+!/web/dist/.gitkeep

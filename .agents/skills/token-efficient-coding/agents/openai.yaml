@@ -1,0 +1,3 @@
+interface:
+  display_name: "Implementação com economia de tokens"
+  short_description: "Código com contexto enxuto e validação proporcional"
