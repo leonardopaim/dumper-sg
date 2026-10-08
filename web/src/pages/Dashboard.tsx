@@ -87,11 +87,7 @@ export function Dashboard({
       <section className="hero-card">
         <div>
           <span className="eyebrow">PROTEJA O QUE IMPORTA</span>
-          <h2>
-            Um backup hoje.
-            <br />
-            Tranquilidade amanhã.
-          </h2>
+          <h2>Seu próximo backup começa aqui.</h2>
           <p>
             Defina a origem, escolha o destino e acompanhe os eventos sem sair
             do console.
@@ -102,17 +98,6 @@ export function Dashboard({
             {profiles.length ? "Criar um backup" : "Adicionar primeiro perfil"}
             <ArrowRight size={17} />
           </Button>
-        </div>
-        <div className="hero-art" aria-hidden="true">
-          <div className="orbit orbit-one" />
-          <div className="orbit orbit-two" />
-          <div className="database-art">
-            <Database size={80} strokeWidth={1.2} />
-            <span className="art-check">
-              <CheckCircle2 size={24} />
-            </span>
-          </div>
-          <span className="art-label">LOCAL · MYSQL</span>
         </div>
       </section>
       <div className="quick-grid">
@@ -156,7 +141,7 @@ export function Dashboard({
         </div>
         {history.length ? (
           <div className="activity-list">
-            {history.slice(0, 5).map((job) => (
+            {history.slice(0, 3).map((job) => (
               <button
                 className="activity-row"
                 key={job.id}

@@ -191,7 +191,7 @@ func BuildRestore(p Profile, req RestoreRequest, cfg Config, id string) (Command
 		cmd.Args = append(cmd.Args, "--ssl")
 	}
 	if req.OverwriteTables {
-		cmd.Args = append(cmd.Args, "--overwrite-tables")
+		cmd.Args = append(cmd.Args, "--drop-table=DROP")
 	}
 	return cmd, dir, nil
 }

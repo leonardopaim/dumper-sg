@@ -131,3 +131,17 @@ Se um término de container não puder ser confirmado, o job mantém `cleanup_re
 - `scripts/integration-wsl.ps1`: aprovado em MySQL 8.4.3 descartável; teste de conexão, criação de banco isolado, backup comprimido, arquivo metadata gravado no Windows e restauração com duas linhas conferidas.
 - `TestWSLCancellationIntegration` com opt-in: aprovado em Alpine descartável; container chegou ao estado running, foi cancelado e sua ausência foi confirmada no mesmo daemon.
 - Containers temporários foram removidos; os containers e bancos já existentes do usuário não foram alterados.
+
+## Correções de compatibilidade — 08/10/2026
+
+MyLoader 1.0.3-1 não aceita a opção antiga --overwrite-tables. A aplicação agora envia --drop-table=DROP somente quando overwrite_tables=true, mantendo a confirmação de sobrescrita e as restrições de destino. A classificação de logs usa a severidade estruturada do MyDumper/MyLoader em vez de considerar todo stderr como erro.
+
+Validação: go test ./..., go vet -buildvcs=false ./... e build aprovados. Integração real no WSL com MySQL descartável aprovada para destino vazio, falha esperada em tabelas existentes sem sobrescrita e substituição explícita de tabelas com dados alterados. Dados da origem e uma tabela alheia no destino foram preservados; níveis dos logs também foram conferidos. Nenhuma restauração foi repetida nos bancos reais do usuário.
+
+## Interface compacta — 08/10/2026
+
+Monitor global movido para o topo, com status, duração, cancelamento, caminho e barra de progresso estimado sempre disponíveis. Logs começam ocultos e o botão Mostrar/Ocultar logs guarda uma preferência booleana no navegador; atualização de status/eventos continua com o painel fechado. Backup e restauração distribuem seus campos em duas colunas no desktop; cartões, títulos e espaços foram reduzidos, mantendo a navegação responsiva.
+
+Medição em 1366×768, com uma operação de backup simulada: a altura do conteúdo caiu de 1513 pixels na interface anterior com logs abertos para 820 pixels na interface compacta com logs fechados. O monitor passou de y=1132 para y=80, e o botão principal ficou totalmente visível, terminando em y=741. Barras de backup/restore, persistência da preferência, cancelamento e falhas sem logs foram conferidos no Edge headless; nenhum banco real foi utilizado nessa validação visual.
+
+Validação final desta interface: 17 testes frontend aprovados em 6 arquivos, build Vite e executável Go aprovados. QA no navegador confirmou barras de backup/restauração, logs ocultos por padrão, preferência mantida após recarregar, cancelamento sem abrir logs, erro visível e caminhos longos sem overflow em desktop/mobile. CRUD real de perfis e navegação nas seis telas também passaram com dados temporários; nenhuma operação de banco real foi executada para validar layout.

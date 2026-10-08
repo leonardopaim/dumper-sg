@@ -28,11 +28,11 @@ function Invoke-TaskAPI([string]$Route, [object]$Body) {
     if ($taskResponse.kind -and $taskResponse.id) { $taskOwnedJobs.Add($taskResponse.id) }
     return $taskResponse
 }
-function Wait-DumperJob([object]$Job) {
+function Wait-DumperJob([object]$Job, [string]$ExpectedStatus = 'succeeded') {
     for ($taskTry = 0; $taskTry -lt 180; $taskTry++) {
         $taskJob = Invoke-RestMethod -Uri ($taskBase + '/api/v1/jobs/' + $Job.id)
-        if ($taskJob.status -eq 'succeeded') { return $taskJob }
-        if ($taskJob.status -in @('failed','cancelled')) {
+        if ($taskJob.status -eq $ExpectedStatus) { return $taskJob }
+        if ($taskJob.status -in @('succeeded','failed','cancelled')) {
             $taskEvents = Invoke-RestMethod -Uri ($taskBase + '/api/v1/jobs/' + $Job.id + '/events')
             throw ('Job ' + $taskJob.kind + ' falhou: ' + $taskJob.message + "`n" + ($taskEvents | ConvertTo-Json -Depth 6))
         }
@@ -80,7 +80,17 @@ try {
     Wait-DumperJob (Invoke-TaskAPI '/api/v1/restores' @{profile_id=$taskProfile.id;backup_dir=$taskBackup.path;target_database='qa_restore';threads=2;overwrite_tables=$false}) | Out-Null
     $taskRows = Invoke-TaskDocker @('exec',$taskContainer,'mysql','--protocol=TCP','--host=127.0.0.1','--user=root',('--password=' + $taskPassword),'--batch','--skip-column-names',"--execute=SELECT GROUP_CONCAT(CONCAT(id,':',label) ORDER BY id SEPARATOR '|') FROM qa_restore.sample;")
     if ($taskRows -notmatch '1:alpha\|2:beta') { throw 'Dados restaurados divergentes.' }
-    Write-Output 'Integracao WSL aprovada: conexao TCP, criacao de banco, backup comprimido, bind Windows/WSL e restauracao com dados conferidos.'
+    # Repeat against existing tables: preserve-by-default must fail; explicit
+    # overwrite must replace only backed-up tables in the isolated target.
+    Wait-DumperJob (Invoke-TaskAPI '/api/v1/restores' @{profile_id=$taskProfile.id;backup_dir=$taskBackup.path;target_database='qa_restore';threads=2;overwrite_tables=$false}) 'failed' | Out-Null
+    Invoke-TaskDocker @('exec',$taskContainer,'mysql','--protocol=TCP','--host=127.0.0.1','--user=root',('--password=' + $taskPassword),"--execute=UPDATE qa_restore.sample SET label='changed'; INSERT INTO qa_restore.sample VALUES (3,'extra'); CREATE TABLE qa_restore.unrelated (id INT); INSERT INTO qa_restore.unrelated VALUES (7);") | Out-Null
+    $taskOverwrite = Wait-DumperJob (Invoke-TaskAPI '/api/v1/restores' @{profile_id=$taskProfile.id;backup_dir=$taskBackup.path;target_database='qa_restore';threads=2;overwrite_tables=$true})
+    $taskRows = Invoke-TaskDocker @('exec',$taskContainer,'mysql','--protocol=TCP','--host=127.0.0.1','--user=root',('--password=' + $taskPassword),'--batch','--skip-column-names',"--execute=SELECT GROUP_CONCAT(CONCAT(id,':',label) ORDER BY id SEPARATOR '|') FROM qa_restore.sample; SELECT SUM(id) FROM qa_restore.unrelated; SELECT GROUP_CONCAT(CONCAT(id,':',label) ORDER BY id SEPARATOR '|') FROM qa_source.sample;")
+    $taskValues = @($taskRows -split "`n" | Where-Object { $_ -notmatch '^mysql:' -and $_.Trim() } | ForEach-Object { $_.Trim() })
+    if ($taskValues.Count -ne 3 -or $taskValues[0] -ne '1:alpha|2:beta' -or $taskValues[1] -ne '7' -or $taskValues[2] -ne '1:alpha|2:beta') { throw 'Sobrescrita nao preservou origem/tabela alheia ou nao substituiu os dados.' }
+    $taskLog = Get-Content -LiteralPath (Join-Path $taskData ('logs\' + $taskOverwrite.id + '.log'))
+    if (-not ($taskLog | Where-Object { $_ -match ' info \*\* Message:' }) -or ($taskLog | Where-Object { $_ -match ' error \*\* Message:' })) { throw 'Mensagens informativas classificadas incorretamente.' }
+    Write-Output 'Integracao WSL aprovada: backup/restore, falha sem sobrescrita em tabelas existentes, sobrescrita explicita com dados conferidos e classificacao de logs.'
     Write-Output ('Artefatos isolados: ' + $taskData)
 } finally {
     if ($taskProcess -and -not $taskProcess.HasExited -and $taskHeaders) {

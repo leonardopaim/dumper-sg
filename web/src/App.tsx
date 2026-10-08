@@ -247,6 +247,7 @@ export function App() {
               </Button>
             </div>
           )}
+          <JobMonitor controller={jobs} />
           {loading ? (
             <div className="loading-state" role="status">
               <RefreshCw className="spin" size={24} />
@@ -311,7 +312,6 @@ export function App() {
               )}
             </>
           )}
-          <JobMonitor controller={jobs} />
           <footer className="main-footer">
             <span>Seus dados permanecem no seu ambiente.</span>
             <span>MYDUMPER + MYLOADER · POWERED BY GO</span>

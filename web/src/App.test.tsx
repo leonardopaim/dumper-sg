@@ -30,10 +30,12 @@ const running: Job = {
 afterEach(() => {
   vi.restoreAllMocks();
   location.hash = "";
+  localStorage.clear();
 });
 describe("navegação durante operações", () => {
   it("mantém o monitor e permite cancelar mesmo depois de alternar de tela", async () => {
     location.hash = "#dashboard";
+    localStorage.clear();
     vi.spyOn(api, "profiles").mockResolvedValue([profile]);
     vi.spyOn(api, "settings").mockResolvedValue({
       default_backup_dir: "/backup",
@@ -64,9 +66,15 @@ describe("navegação durante operações", () => {
       .mockResolvedValue({ ...running, status: "cancel_requested" });
     const user = userEvent.setup();
     render(<App />);
+    await waitFor(() => expect(api.events).toHaveBeenCalled());
+    expect(
+      screen.queryByText("Tabela real do processo"),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Mostrar logs" }));
     await waitFor(() =>
       expect(screen.getByText("Tabela real do processo")).toBeInTheDocument(),
     );
+    await user.click(screen.getByRole("button", { name: "Ocultar logs" }));
     await user.click(screen.getByRole("link", { name: /Perfis de banco/ }));
     expect(
       screen.getByRole("heading", { name: "Perfis de banco" }),
@@ -75,8 +83,14 @@ describe("navegação durante operações", () => {
       name: "Acompanhamento da operação",
     });
     expect(
-      within(monitor).getByText("Tabela real do processo"),
-    ).toBeInTheDocument();
+      within(monitor).queryByText("Tabela real do processo"),
+    ).not.toBeInTheDocument();
+    expect(within(monitor).getByText("32% estimado")).toBeInTheDocument();
+    expect(
+      monitor.compareDocumentPosition(
+        screen.getByRole("heading", { name: "Perfis de banco" }),
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     await user.click(within(monitor).getByRole("button", { name: "Cancelar" }));
     expect(cancel).toHaveBeenCalledWith("job1");
     expect(

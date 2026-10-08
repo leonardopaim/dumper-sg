@@ -92,8 +92,13 @@ func TestRestoreRequiresMetadataAndEscapesSQL(t *testing.T) {
 	if err != nil || canonical != dir {
 		t.Fatalf("restore failed: %v", err)
 	}
-	if !strings.Contains(strings.Join(cmd.Args, " "), "--overwrite-tables") {
+	if !strings.Contains(strings.Join(cmd.Args, " "), "--drop-table=DROP") || strings.Contains(strings.Join(cmd.Args, " "), "--overwrite-tables") {
 		t.Fatal("overwrite flag missing")
+	}
+	req.OverwriteTables = false
+	withoutDrop, _, err := BuildRestore(testProfile(), req, Config{}, "plain")
+	if err != nil || strings.Contains(strings.Join(withoutDrop.Args, " "), "--drop-table") {
+		t.Fatal("table removal enabled without explicit overwrite")
 	}
 	cmd, err = BuildCreateDatabase(testProfile(), "test`; DROP DATABASE production; --", Config{}, "abc")
 	if err != nil {

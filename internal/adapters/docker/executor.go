@@ -216,6 +216,25 @@ type lineWriter struct {
 	oversized bool
 }
 
+// GLib/MyDumper writes every severity to stderr, including normal Message logs.
+// Recognize its structured prefix; keep the stream level for unknown text.
+var glibLevel = regexp.MustCompile(`(?i)^\s*\*\*\s+(?:\([^)]+\):\s*)?(message|info|debug|warning|critical|error)(?:\s*\*\*)?:`)
+
+func logLevel(line, fallback string) string {
+	match := glibLevel.FindStringSubmatch(line)
+	if len(match) < 2 {
+		return fallback
+	}
+	switch strings.ToLower(match[1]) {
+	case "message", "info", "debug":
+		return "info"
+	case "warning":
+		return "warning"
+	default:
+		return "error"
+	}
+}
+
 func (w *lineWriter) Write(p []byte) (int, error) {
 	for _, b := range p {
 		if b == '\n' {
@@ -242,13 +261,14 @@ func (w *lineWriter) flush() {
 		}
 	} else if len(w.line) > 0 {
 		line := strings.TrimSuffix(string(w.line), "\r")
+		level := logLevel(line, w.level)
 		for _, secret := range w.secrets {
 			if secret != "" {
 				line = strings.ReplaceAll(line, secret, "***")
 			}
 		}
 		if w.emit != nil {
-			w.emit(w.level, line)
+			w.emit(level, line)
 		}
 	}
 	w.line, w.oversized = w.line[:0], false

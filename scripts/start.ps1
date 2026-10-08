@@ -1,4 +1,4 @@
-param([string]$Address = '127.0.0.1:8787', [string]$DataDir = '', [ValidateSet('auto','native','wsl')][string]$DockerRuntime = 'auto', [string]$WslDistro = '', [string]$MySQLImage = '', [string]$DumperImage = '')
+param([string]$Address = '127.0.0.1:8787', [string]$DataDir = '', [ValidateSet('auto','native','wsl')][string]$DockerRuntime = 'auto', [string]$WslDistro = '', [string]$MySQLImage = '', [string]$DumperImage = '', [string]$Origins = '')
 $ErrorActionPreference = 'Stop'
 $taskRoot = Split-Path -Parent $PSScriptRoot
 $taskExe = Join-Path $taskRoot 'dist\dumpersg.exe'
@@ -10,4 +10,5 @@ if ($WslDistro) { $taskArguments += @('-wsl-distro', $WslDistro) }
 if ($MySQLImage) { $taskArguments += @('-mysql-image', $MySQLImage) }
 if ($DumperImage) { $taskArguments += @('-docker-image', $DumperImage) }
 if ($DataDir) { $taskArguments += @('-data-dir', $DataDir) }
+if ($Origins) { $taskArguments += @('-origins', $Origins) }
 & $taskExe @taskArguments

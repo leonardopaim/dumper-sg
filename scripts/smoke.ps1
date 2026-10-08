@@ -39,6 +39,9 @@ try {
     if (-not $taskNoToken) { throw 'Mutação sem token aceita.' }
     $taskPage = Invoke-WebRequest ($taskBase + '/profiles')
     if ($taskPage.StatusCode -ne 200 -or $taskPage.Content -notmatch 'id="root"') { throw 'Frontend embarcado/rota SPA falhou.' }
+    if ($taskPage.Content -notmatch 'rel="icon"[^>]+href="/favicon.svg"') { throw 'Favicon ausente no frontend embarcado.' }
+    $taskIcon = Invoke-WebRequest ($taskBase + '/favicon.svg')
+    if ($taskIcon.StatusCode -ne 200 -or $taskIcon.Headers['Content-Type'] -notlike 'image/svg+xml*' -or $taskIcon.Content -notmatch '<svg') { throw 'Favicon embarcado nao foi servido corretamente.' }
     Invoke-RestMethod ($taskBase + '/api/v1/profiles/' + $taskProfile.id) -Method Delete -Headers $taskHeaders | Out-Null
     Write-Output 'Smoke test aprovado: executável, sessão, CRUD, senha oculta, proteção do core e frontend embarcado.'
     Write-Output ('Dados isolados do teste: ' + $taskData)

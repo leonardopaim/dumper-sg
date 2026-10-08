@@ -1,10 +1,5 @@
 import { useEffect, useState } from "react";
-import {
-  Archive,
-  ArrowRight,
-  FolderOpen,
-  SlidersHorizontal,
-} from "lucide-react";
+import { Archive, ArrowRight, SlidersHorizontal } from "lucide-react";
 import { api, errorMessage } from "../api";
 import {
   Alert,
@@ -81,107 +76,111 @@ export function Backup({
         </Empty>
       ) : (
         <form onSubmit={submit} className="operation-layout">
-          <div className="card form-card">
-            <div className="card-heading">
-              <span className="step">01</span>
-              <div>
-                <h2>Origem e destino</h2>
-                <p>Selecione o banco e onde guardar os arquivos.</p>
+          <div className="card form-card operation-card">
+            <section className="operation-section">
+              <div className="card-heading">
+                <span className="step">01</span>
+                <div>
+                  <h2>Origem e destino</h2>
+                  <p>Selecione o banco e onde guardar os arquivos.</p>
+                </div>
               </div>
-            </div>
-            <div className="form-grid">
-              <Field label="Perfil de conexão" className="full">
-                <select
-                  value={form.profile_id}
-                  onChange={(e) => selectProfile(Number(e.target.value))}
-                >
-                  {profiles.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name} · {item.host}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Banco de origem" className="full">
-                <input
-                  required
-                  value={form.database}
-                  onChange={(e) => update("database", e.target.value)}
-                  placeholder="nome_do_banco"
-                />
-              </Field>
-              <Field
-                label="Diretório de destino"
-                className="full"
-                hint={
-                  settings.default_backup_dir
-                    ? `Vazio usa o padrão: ${settings.default_backup_dir}`
-                    : "Informe um caminho absoluto ou defina um diretório padrão em Configurações."
-                }
-              >
-                <input
-                  value={form.destination_dir}
-                  onChange={(e) => update("destination_dir", e.target.value)}
-                  placeholder={
-                    settings.default_backup_dir ||
-                    "Caminho absoluto no computador"
+              <div className="form-grid">
+                <Field label="Perfil de conexão" className="full">
+                  <select
+                    value={form.profile_id}
+                    onChange={(e) => selectProfile(Number(e.target.value))}
+                  >
+                    {profiles.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name} · {item.host}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Banco de origem" className="full">
+                  <input
+                    required
+                    value={form.database}
+                    onChange={(e) => update("database", e.target.value)}
+                    placeholder="nome_do_banco"
+                  />
+                </Field>
+                <Field
+                  label="Diretório de destino"
+                  className="full"
+                  hint={
+                    settings.default_backup_dir
+                      ? `Vazio usa o padrão: ${settings.default_backup_dir}`
+                      : "Informe um caminho absoluto ou defina um diretório padrão em Configurações."
                   }
-                />
-              </Field>
-            </div>
-            <div className="card-heading section-heading">
-              <span className="step">02</span>
-              <div>
-                <h2>Opções de exportação</h2>
-                <p>Ajuste o processamento para este backup.</p>
+                >
+                  <input
+                    value={form.destination_dir}
+                    onChange={(e) => update("destination_dir", e.target.value)}
+                    placeholder={
+                      settings.default_backup_dir ||
+                      "Caminho absoluto no computador"
+                    }
+                  />
+                </Field>
               </div>
-              <SlidersHorizontal size={18} />
-            </div>
-            <div className="form-grid">
-              <Field
-                label="Threads"
-                hint={`0 usa o perfil (${profile?.threads || 8} threads).`}
-              >
-                <input
-                  type="number"
-                  min={0}
-                  max={128}
-                  required
-                  value={form.threads}
-                  onChange={(e) => update("threads", Number(e.target.value))}
+            </section>
+            <section className="operation-section">
+              <div className="card-heading section-heading">
+                <span className="step">02</span>
+                <div>
+                  <h2>Opções de exportação</h2>
+                  <p>Ajuste o processamento para este backup.</p>
+                </div>
+                <SlidersHorizontal size={18} />
+              </div>
+              <div className="form-grid">
+                <Field
+                  label="Threads"
+                  hint={`0 usa o perfil (${profile?.threads || 8} threads).`}
+                >
+                  <input
+                    type="number"
+                    min={0}
+                    max={128}
+                    required
+                    value={form.threads}
+                    onChange={(e) => update("threads", Number(e.target.value))}
+                  />
+                </Field>
+                <Field
+                  label="Excluir tabelas por expressão"
+                  hint="Opcional. Expressão regular compatível com mydumper."
+                >
+                  <input
+                    value={form.ignore_regex}
+                    onChange={(e) => update("ignore_regex", e.target.value)}
+                    placeholder="Ex.: .*\.logs_.*"
+                  />
+                </Field>
+              </div>
+              <div className="toggle-list">
+                <Toggle
+                  label="Comprimir arquivos"
+                  hint="Reduz o espaço utilizado pelo backup."
+                  checked={form.compress}
+                  onChange={(value) => update("compress", value)}
                 />
-              </Field>
-              <Field
-                label="Excluir tabelas por expressão"
-                hint="Opcional. Expressão regular compatível com mydumper."
-              >
-                <input
-                  value={form.ignore_regex}
-                  onChange={(e) => update("ignore_regex", e.target.value)}
-                  placeholder="Ex.: .*\.logs_.*"
+                <Toggle
+                  label="Usar SSL"
+                  hint="Utiliza conexão criptografada com o servidor."
+                  checked={form.ssl}
+                  onChange={(value) => update("ssl", value)}
                 />
-              </Field>
-            </div>
-            <div className="toggle-list">
-              <Toggle
-                label="Comprimir arquivos"
-                hint="Reduz o espaço utilizado pelo backup."
-                checked={form.compress}
-                onChange={(value) => update("compress", value)}
-              />
-              <Toggle
-                label="Usar SSL"
-                hint="Utiliza conexão criptografada com o servidor."
-                checked={form.ssl}
-                onChange={(value) => update("ssl", value)}
-              />
-              <Toggle
-                label="Não bloquear tabelas"
-                hint="Evita locks; considere a consistência dos dados durante gravações."
-                checked={form.non_locking}
-                onChange={(value) => update("non_locking", value)}
-              />
-            </div>
+                <Toggle
+                  label="Não bloquear tabelas"
+                  hint="Evita locks; considere a consistência dos dados durante gravações."
+                  checked={form.non_locking}
+                  onChange={(value) => update("non_locking", value)}
+                />
+              </div>
+            </section>
             {error && <Alert>{error}</Alert>}
             <div className="form-footer">
               <span>
@@ -196,26 +195,6 @@ export function Backup({
               </Button>
             </div>
           </div>
-          <aside className="card operation-aside">
-            <span className="icon-tile">
-              <FolderOpen size={24} />
-            </span>
-            <h2>Arquivos sob seu controle</h2>
-            <p>
-              O core executa o mydumper em Docker e salva o resultado no
-              diretório local informado.
-            </p>
-            <div className="aside-rule" />
-            <small>ORIGEM SELECIONADA</small>
-            <strong>{profile?.name || "—"}</strong>
-            <code>
-              {profile?.host}:{profile?.port}
-            </code>
-            <p className="muted">
-              Após concluir, o backup aparece no catálogo de restauração se
-              estiver no diretório padrão.
-            </p>
-          </aside>
         </form>
       )}
     </>

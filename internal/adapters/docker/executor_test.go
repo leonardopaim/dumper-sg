@@ -27,6 +27,33 @@ func TestLineWriterBoundsOutputAndRedactsSplitWrites(t *testing.T) {
 	}
 }
 
+func TestGLibMessagesUseDeclaredSeverityInsteadOfStderr(t *testing.T) {
+	for _, tc := range []struct{ text, stream, expected string }{
+		{"** Message: 03:19:47.055: MyDumper restore version: 1.0.3-1", "error", "info"},
+		{"** Message: 03:19:47.127: Fast index creation will be used for table", "error", "info"},
+		{"** (myloader:1): WARNING **: 03:19:47: Table already exists", "error", "warning"},
+		{"** (myloader:1): CRITICAL **: 03:24:47: Unknown option", "error", "error"},
+		{"** (myloader:1): ERROR **: Error restoring schema", "info", "error"},
+		{"docker: daemon failed", "error", "error"},
+		{"message body mentions ERROR but has no log prefix", "info", "info"},
+	} {
+		t.Run(tc.text, func(t *testing.T) {
+			var level, message string
+			writer := &lineWriter{level: tc.stream, secrets: []string{"1.0.3-1"}, emit: func(l, s string) { level, message = l, s }}
+			// Prefix/secrets may cross writes; the final partial line is also parsed.
+			writer.Write([]byte(tc.text[:5]))
+			writer.Write([]byte(tc.text[5:]))
+			writer.flush()
+			if level != tc.expected {
+				t.Fatalf("level=%s expected=%s", level, tc.expected)
+			}
+			if strings.Contains(message, "1.0.3-1") {
+				t.Fatal("redaction regressed")
+			}
+		})
+	}
+}
+
 func helperExecutor(t *testing.T, mode string) (*Executor, string) {
 	t.Helper()
 	dir := t.TempDir()
