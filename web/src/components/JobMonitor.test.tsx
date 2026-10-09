@@ -92,6 +92,35 @@ describe("acompanhamento compacto", () => {
     ).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByLabelText("Logs da operação")).not.toBeInTheDocument();
   });
+  it("fecha pelo controle do painel mesmo enquanto recebe novos eventos", async () => {
+    const user = userEvent.setup();
+    const control = controller();
+    const view = render(<JobMonitor controller={control} />);
+    await user.click(screen.getByRole("button", { name: "Mostrar logs" }));
+    view.rerender(
+      <JobMonitor
+        controller={{
+          ...control,
+          events: [
+            ...control.events,
+            {
+              sequence: 2,
+              time: running.started_at,
+              level: "info",
+              message: "Novo evento",
+            },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByText("Novo evento")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Fechar logs" }));
+    expect(screen.queryByLabelText("Logs da operação")).not.toBeInTheDocument();
+    expect(localStorage.getItem(logsPreferenceKey)).toBe("false");
+    await user.click(screen.getByRole("button", { name: "Mostrar logs" }));
+    await user.click(screen.getByRole("button", { name: "Ocultar logs" }));
+    expect(screen.queryByLabelText("Logs da operação")).not.toBeInTheDocument();
+  });
   it("mantém erros acessíveis com os logs ocultos", () => {
     render(
       <JobMonitor

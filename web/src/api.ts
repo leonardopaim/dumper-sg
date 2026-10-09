@@ -8,6 +8,10 @@ import type {
   Settings,
   BackupInput,
   RestoreInput,
+  TableInfo,
+  TableQuery,
+  BackupTableInfo,
+  ApplicationStatus,
 } from "./types";
 const base = "/api/v1";
 let tokenPromise: Promise<string> | undefined;
@@ -46,6 +50,7 @@ export async function request<T>(
   path: string,
   method = "GET",
   body?: unknown,
+  signal?: AbortSignal,
 ): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (method !== "GET") headers["X-DumperSG-Token"] = await token();
@@ -53,12 +58,38 @@ export async function request<T>(
   const response = await fetch(`${base}${path}`, {
     method,
     headers,
+    signal,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (response.status === 403) tokenPromise = undefined;
   return read<T>(response);
 }
 export const api = {
+  application: (signal?: AbortSignal) =>
+    request<ApplicationStatus>("/application", "GET", undefined, signal),
+  restartApplication: (signal?: AbortSignal) =>
+    request<{ status: string; instance_id: string }>(
+      "/application/restart",
+      "POST",
+      {},
+      signal,
+    ),
+  startTableList: (data: TableQuery) => request<Job>("/tables", "POST", data),
+  tableResult: (id: string, signal?: AbortSignal) =>
+    request<TableInfo[]>(
+      `/jobs/${encodeURIComponent(id)}/tables`,
+      "GET",
+      undefined,
+      signal,
+    ),
+  tables: queryTables,
+  backupTables: (backup_dir: string, signal?: AbortSignal) =>
+    request<BackupTableInfo[]>(
+      "/backups/tables",
+      "POST",
+      { backup_dir },
+      signal,
+    ),
   profiles: () => request<Profile[]>("/profiles"),
   createProfile: (data: ProfileInput) =>
     request<Profile>("/profiles", "POST", data),
@@ -72,7 +103,8 @@ export const api = {
     request<Job>("/databases", "POST", { profile_id, database }),
   jobs: () => request<Job[]>("/jobs"),
   history: (limit = 100) => request<Job[]>(`/history?limit=${limit}`),
-  job: (id: string) => request<Job>(`/jobs/${encodeURIComponent(id)}`),
+  job: (id: string, signal?: AbortSignal) =>
+    request<Job>(`/jobs/${encodeURIComponent(id)}`, "GET", undefined, signal),
   events: (id: string, after = 0) =>
     request<JobEvent[]>(
       `/jobs/${encodeURIComponent(id)}/events?after=${after}`,
@@ -96,4 +128,109 @@ export function errorMessage(error: unknown): string {
     : error instanceof Error
       ? error.message
       : "Não foi possível concluir a operação.";
+}
+
+export const tableLimit = 10000;
+export const tableQueryTimeoutMs = 120000;
+interface TableQueryOptions {
+  signal?: AbortSignal;
+  onJob?: (job: Job) => void;
+}
+function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const abort = () =>
+      reject(new DOMException("Consulta cancelada.", "AbortError"));
+    if (signal.aborted) abort();
+    else signal.addEventListener("abort", abort, { once: true });
+    promise
+      .then(resolve, reject)
+      .finally(() => signal.removeEventListener("abort", abort));
+  });
+}
+async function queryTables(
+  data: TableQuery,
+  options: TableQueryOptions = {},
+): Promise<TableInfo[]> {
+  const controller = new AbortController();
+  const externalAbort = () => controller.abort();
+  options.signal?.addEventListener("abort", externalAbort, { once: true });
+  if (options.signal?.aborted) controller.abort();
+  let timedOut = false;
+  let created: Job | undefined;
+  let complete = false;
+  let cancelled = false;
+  const cancelOwnJob = () => {
+    if (
+      !cancelled &&
+      created &&
+      (created.status === "running" || created.status === "cancel_requested")
+    ) {
+      cancelled = true;
+      void api.cancel(created.id).catch(() => undefined);
+    }
+  };
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, tableQueryTimeoutMs);
+  try {
+    controller.signal.throwIfAborted();
+    // Keep the creation response observable so a late response can cancel this job only.
+    const creation = api.startTableList(data).then((job) => {
+      created = job;
+      if (controller.signal.aborted) cancelOwnJob();
+      return job;
+    });
+    created = await abortable(creation, controller.signal);
+    options.onJob?.(created);
+    while (
+      created.status === "running" ||
+      created.status === "cancel_requested"
+    ) {
+      await abortable(
+        new Promise<void>((resolve) => setTimeout(resolve, 500)),
+        controller.signal,
+      );
+      created = await api.job(created.id, controller.signal);
+    }
+    if (created.status !== "succeeded")
+      throw new Error(
+        created.message || "Não foi possível consultar as tabelas.",
+      );
+    complete = true;
+    options.onJob?.(created);
+    const tables = await api.tableResult(created.id, controller.signal);
+    if (!Array.isArray(tables) || tables.length > tableLimit)
+      throw new Error(
+        `O catálogo excede o limite de ${tableLimit.toLocaleString("pt-BR")} tabelas. Use todas as tabelas ou consulte um banco menor.`,
+      );
+    if (
+      tables.some(
+        (table) =>
+          typeof table.name !== "string" ||
+          !table.name ||
+          table.name.length > 256 ||
+          !Number.isFinite(table.size_bytes) ||
+          table.size_bytes < 0 ||
+          !Number.isFinite(table.rows) ||
+          table.rows < 0 ||
+          typeof table.table_type !== "string",
+      )
+    )
+      throw new Error("A consulta retornou um catálogo de tabelas inválido.");
+    return tables.sort(
+      (a, b) =>
+        b.size_bytes - a.size_bytes || a.name.localeCompare(b.name, "pt-BR"),
+    );
+  } catch (error) {
+    if (timedOut)
+      throw new Error(
+        "A consulta de tabelas excedeu 2 minutos. Verifique a conexão e tente novamente.",
+      );
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    options.signal?.removeEventListener("abort", externalAbort);
+    if (!complete) cancelOwnJob();
+  }
 }

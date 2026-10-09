@@ -145,3 +145,7 @@ Monitor global movido para o topo, com status, duração, cancelamento, caminho 
 Medição em 1366×768, com uma operação de backup simulada: a altura do conteúdo caiu de 1513 pixels na interface anterior com logs abertos para 820 pixels na interface compacta com logs fechados. O monitor passou de y=1132 para y=80, e o botão principal ficou totalmente visível, terminando em y=741. Barras de backup/restore, persistência da preferência, cancelamento e falhas sem logs foram conferidos no Edge headless; nenhum banco real foi utilizado nessa validação visual.
 
 Validação final desta interface: 17 testes frontend aprovados em 6 arquivos, build Vite e executável Go aprovados. QA no navegador confirmou barras de backup/restauração, logs ocultos por padrão, preferência mantida após recarregar, cancelamento sem abrir logs, erro visível e caminhos longos sem overflow em desktop/mobile. CRUD real de perfis e navegação nas seis telas também passaram com dados temporários; nenhuma operação de banco real foi executada para validar layout.
+
+### Ajuste de acompanhamento (08/10/2026)
+
+O monitor foi reposicionado abaixo do conteúdo principal para não deslocar os formulários quando uma operação começa. A barra de eventos ganhou um controle explícito Fechar logs; o botão no cabeçalho continua disponível. Clicar no status da barra superior ou selecionar uma operação no histórico leva ao monitor, sem rolagem automática no início de um job.

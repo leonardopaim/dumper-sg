@@ -7,6 +7,7 @@ export const kinds: Record<JobKind, string> = {
   restore: "Restauração",
   connection_test: "Teste de conexão",
   create_database: "Criar banco",
+  table_list: "Consulta de tabelas",
 };
 export const statuses: Record<JobStatus, string> = {
   running: "Em execução",

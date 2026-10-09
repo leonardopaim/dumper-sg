@@ -17,7 +17,7 @@ import (
 	modernsqlite "modernc.org/sqlite"
 )
 
-const schemaVersion = 1
+const schemaVersion = 2
 
 type Store struct {
 	db   *sql.DB
@@ -108,6 +108,13 @@ PRAGMA user_version = 1;`)
 			if err != nil {
 				return err
 			}
+			version = 1
+		}
+		if version == 1 {
+			if _, err := tx.ExecContext(ctx, `ALTER TABLE profiles ADD COLUMN table_presets TEXT NOT NULL DEFAULT '[]';
+PRAGMA user_version = 2;`); err != nil {
+				return err
+			}
 		}
 		rows, err := tx.QueryContext(ctx, "SELECT id, started_at, payload FROM jobs")
 		if err != nil {
@@ -193,18 +200,29 @@ func profileError(err error) error {
 	return err
 }
 
-const profileColumns = "id, nome, host, porta, usuario, senha, database_name, ssl, threads_default"
+const legacyProfileColumns = "id, nome, host, porta, usuario, senha, database_name, ssl, threads_default"
+const profileColumns = legacyProfileColumns + ", table_presets"
 
 type scanner interface{ Scan(...any) error }
 
 func scanProfile(row scanner) (core.Profile, error) {
 	var p core.Profile
-	err := row.Scan(&p.ID, &p.Name, &p.Host, &p.Port, &p.User, &p.Password, &p.Database, &p.SSL, &p.Threads)
+	var presets string
+	err := row.Scan(&p.ID, &p.Name, &p.Host, &p.Port, &p.User, &p.Password, &p.Database, &p.SSL, &p.Threads, &presets)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = core.ErrNotFound
 	}
+	if err != nil {
+		return p, err
+	}
+	if err := json.Unmarshal([]byte(presets), &p.TablePresets); err != nil {
+		return p, fmt.Errorf("seleções de tabelas do perfil %d inválidas: %w", p.ID, err)
+	}
+	if p.TablePresets == nil {
+		p.TablePresets = []core.TablePreset{}
+	}
 	p.HasPassword = p.Password != ""
-	return p, err
+	return p, nil
 }
 
 func (s *Store) ListProfiles(ctx context.Context) ([]core.Profile, error) {
@@ -229,11 +247,23 @@ func (s *Store) GetProfile(ctx context.Context, id int64) (core.Profile, error) 
 }
 
 func (s *Store) SaveProfile(ctx context.Context, p core.Profile) (core.Profile, error) {
-	err := s.transaction(ctx, func(tx *sql.Tx) error {
-		args := []any{p.Name, p.Host, p.Port, p.User, p.Password, p.Database, p.SSL, p.Threads}
+	if p.TablePresets == nil {
+		p.TablePresets = []core.TablePreset{}
+	}
+	presets, err := json.Marshal(p.TablePresets)
+	if err != nil {
+		return p, err
+	}
+	// Keep the returned profile independent of the caller's mutable selections.
+	p.TablePresets = nil
+	if err := json.Unmarshal(presets, &p.TablePresets); err != nil {
+		return p, err
+	}
+	err = s.transaction(ctx, func(tx *sql.Tx) error {
+		args := []any{p.Name, p.Host, p.Port, p.User, p.Password, p.Database, p.SSL, p.Threads, string(presets)}
 		if p.ID == 0 {
 			r, err := tx.ExecContext(ctx, `INSERT INTO profiles
-(nome, host, porta, usuario, senha, database_name, ssl, threads_default) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, args...)
+(nome, host, porta, usuario, senha, database_name, ssl, threads_default, table_presets) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, args...)
 			if err != nil {
 				return profileError(err)
 			}
@@ -242,7 +272,7 @@ func (s *Store) SaveProfile(ctx context.Context, p core.Profile) (core.Profile, 
 		}
 		args = append(args, p.ID)
 		r, err := tx.ExecContext(ctx, `UPDATE profiles SET nome=?, host=?, porta=?, usuario=?, senha=?,
-database_name=?, ssl=?, threads_default=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`, args...)
+database_name=?, ssl=?, threads_default=?, table_presets=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`, args...)
 		if err != nil {
 			return profileError(err)
 		}

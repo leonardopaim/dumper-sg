@@ -7,6 +7,7 @@ import {
   Trash2,
   PlugZap,
 } from "lucide-react";
+import { ProfilePresets } from "../components/ProfilePresets";
 import { api, errorMessage } from "../api";
 import {
   Alert,
@@ -39,6 +40,7 @@ export function Profiles({
   active: boolean;
 }) {
   const [editing, setEditing] = useState<Profile | "new" | null>(null);
+  const [managing, setManaging] = useState<Profile | null>(null);
   const [removing, setRemoving] = useState<Profile | null>(null);
   const [form, setForm] = useState<ProfileInput>(initial);
   const [passwordMode, setPasswordMode] = useState<
@@ -203,9 +205,25 @@ export function Profiles({
                   <Trash2 size={17} />
                 </button>
               </div>
+              <Button
+                className="profile-presets-action"
+                variant="secondary"
+                onClick={() => setManaging(profile)}
+              >
+                Seleções de tabelas
+              </Button>
             </article>
           ))}
         </div>
+      )}
+      {managing && (
+        <ProfilePresets
+          profile={managing}
+          active={active}
+          onJob={onJob}
+          reload={reload}
+          onClose={() => setManaging(null)}
+        />
       )}
       {editing && (
         <Modal
@@ -218,6 +236,12 @@ export function Profiles({
           }}
         >
           <form onSubmit={save}>
+            {editing === "new" && (
+              <p className="table-hint">
+                Salve a conexão primeiro para consultar e criar seleções de
+                tabelas neste perfil.
+              </p>
+            )}
             {error && <Alert>{error}</Alert>}
             <div className="form-grid">
               <Field label="Nome do perfil" className="full">

@@ -45,12 +45,9 @@ func detect(ctx context.Context, opts Options, platform string, factory func(con
 		return e, nil
 	}
 	if mode == "auto" && opts.Distribution == "" {
-		probe, cancel := context.WithTimeout(ctx, 3*time.Second)
-		_, err := e.invoke(probe, "version", "--format", "{{.Server.Version}}")
-		cancel()
-		if err == nil {
-			return e, nil
-		}
+		e.autoPending = true
+		_, _ = e.inspectDaemon(ctx)
+		return e, nil
 	}
 	e.runtime, e.distribution = "wsl", opts.Distribution
 	if e.distribution == "" {
@@ -65,6 +62,8 @@ func detect(ctx context.Context, opts Options, platform string, factory func(con
 }
 
 func (e *Executor) runtimeDescription() string {
+	e.selectionMu.Lock()
+	defer e.selectionMu.Unlock()
 	if e.runtime == "wsl" {
 		if e.distribution != "" {
 			return "WSL (" + e.distribution + ")"
@@ -75,17 +74,11 @@ func (e *Executor) runtimeDescription() string {
 }
 
 func (e *Executor) ExecutionIdentity(ctx context.Context) (string, error) {
-	if e.runtime == "wsl" && e.distribution == "" {
-		return "", fmt.Errorf("distribuição WSL não identificada; reinicie com -wsl-distro explícito")
+	details, err := e.inspectDaemon(ctx)
+	if err != nil {
+		return "", err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
-	defer cancel()
-	id, err := e.invoke(ctx, "info", "--format", "{{.ID}}")
-	id = strings.TrimSpace(id)
-	if err != nil || id == "" || strings.ContainsAny(id, "\x00\r\n") {
-		return "", fmt.Errorf("não foi possível identificar o daemon Docker via %s", e.runtimeDescription())
-	}
-	return e.runtimeDescription() + ":" + id, nil
+	return e.runtimeDescription() + ":" + details.ID, nil
 }
 
 func (e *Executor) verifyIdentity(ctx context.Context, expected string) error {
@@ -100,6 +93,8 @@ func (e *Executor) verifyIdentity(ctx context.Context, expected string) error {
 }
 
 func (e *Executor) wslArgs(program string, args ...string) []string {
+	e.selectionMu.Lock()
+	defer e.selectionMu.Unlock()
 	prefix := []string{}
 	if e.distribution != "" {
 		prefix = append(prefix, "--distribution", e.distribution)
@@ -128,7 +123,7 @@ func (e *Executor) invokeHost(ctx context.Context, program string, args ...strin
 // Ask the selected distribution to convert paths (including custom automount
 // roots), and pass each argument directly through --exec without a shell.
 func (e *Executor) translateMounts(ctx context.Context, args []string) ([]string, error) {
-	if e.runtime != "wsl" {
+	if !e.isWSL() {
 		return args, nil
 	}
 	translated := append([]string(nil), args...)
@@ -161,4 +156,10 @@ func (e *Executor) translateMounts(ctx context.Context, args []string) ([]string
 		translated[i] = converted + suffix
 	}
 	return translated, nil
+}
+
+func (e *Executor) isWSL() bool {
+	e.selectionMu.Lock()
+	defer e.selectionMu.Unlock()
+	return e.runtime == "wsl"
 }

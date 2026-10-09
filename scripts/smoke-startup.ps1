@@ -1,5 +1,8 @@
+param([string]$Executable = '', [ValidateSet('auto','native','wsl')][string]$DockerRuntime = 'auto', [string]$WslDistro = '')
 $ErrorActionPreference = 'Stop'
 $taskRoot = Split-Path -Parent $PSScriptRoot
+if (-not $Executable) { $Executable = Join-Path $taskRoot 'dist\dumpersg.exe' }
+$Executable = [IO.Path]::GetFullPath($Executable)
 $taskQaDir = Join-Path $taskRoot ('data\startup qa ' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $taskQaDir,(Join-Path $taskQaDir 'logs'),(Join-Path $taskQaDir 'conf'),(Join-Path $taskQaDir 'temp') | Out-Null
 $taskPorts = @()
@@ -13,7 +16,7 @@ try {
 $taskBackendPort,$taskProxyPort = $taskPorts
 $taskBackendUrl = 'http://127.0.0.1:' + $taskBackendPort
 $taskProxyUrl = 'http://127.0.0.1:' + $taskProxyPort
-$taskConfig = [ordered]@{ version=1; executable=(Join-Path $taskRoot 'dist\dumpersg.exe'); address=('127.0.0.1:' + $taskBackendPort); dataDir=(Join-Path $taskQaDir ('app data ' + [char]0xE7)); wslDistro='Ubuntu'; mysqlImage='mysql:8.4.3'; dumperImage='mydumper/mydumper:latest' }
+$taskConfig = [ordered]@{ version=2; executable=$Executable; address=('127.0.0.1:' + $taskBackendPort); dataDir=(Join-Path $taskQaDir ('app data ' + [char]0xE7)); dockerRuntime=$DockerRuntime; wslDistro=$WslDistro; mysqlImage='mysql:8.4.3'; dumperImage='mydumper/mydumper:latest' }
 $taskConfigPath = Join-Path $taskQaDir 'launcher.json'
 [IO.File]::WriteAllText($taskConfigPath,($taskConfig | ConvertTo-Json),[Text.UTF8Encoding]::new($false))
 $taskProxyConfig = [IO.File]::ReadAllText((Join-Path $taskRoot 'deploy\nginx\dumpersg.conf')).Replace('8787', [string]$taskBackendPort).Replace('8788', [string]$taskProxyPort)

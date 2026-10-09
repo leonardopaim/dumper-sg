@@ -31,6 +31,7 @@ type execution struct {
 	file     *os.File
 	logBytes int
 	err      error
+	catalog  *tableCatalog
 }
 
 type Manager struct {
@@ -160,13 +161,17 @@ func (m *Manager) StartCreateDatabase(ctx context.Context, req core.DatabaseRequ
 }
 
 func (m *Manager) start(ctx context.Context, p core.Profile, cmd core.Command, job core.Job) (core.Job, error) {
+	return m.startCollected(ctx, p, cmd, job, nil)
+}
+
+func (m *Manager) startCollected(ctx context.Context, p core.Profile, cmd core.Command, job core.Job, catalog *tableCatalog) (core.Job, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.initErr != nil {
 		return core.Job{}, m.initErr
 	}
 	if m.closed {
-		return core.Job{}, fmt.Errorf("gerenciador encerrado")
+		return core.Job{}, fmt.Errorf("aplicação encerrando ou reiniciando: %w", core.ErrConflict)
 	}
 	if m.active != nil {
 		return core.Job{}, fmt.Errorf("já existe uma operação em execução: %w", core.ErrConflict)
@@ -192,6 +197,9 @@ func (m *Manager) start(ctx context.Context, p core.Profile, cmd core.Command, j
 		return core.Job{}, err
 	}
 	job.Status, job.StartedAt, job.Message = "running", timestamp(), "Operação iniciada; progresso estimado."
+	if catalog != nil {
+		job.Message = "Consultando tabelas e views..."
+	}
 	job.ProfileID, job.ProfileName = p.ID, p.Name
 	if err := m.repo.SaveJob(ctx, job); err != nil {
 		f.Close()
@@ -199,7 +207,7 @@ func (m *Manager) start(ctx context.Context, p core.Profile, cmd core.Command, j
 		return core.Job{}, err
 	}
 	jobCtx, cancel := context.WithCancel(context.Background())
-	x := &execution{job: job, command: core.Command{Program: cmd.Program, ContainerName: cmd.ContainerName, DockerIdentity: cmd.DockerIdentity}, secrets: append([]string(nil), cmd.Secrets...), cancel: cancel, done: make(chan struct{}), file: f}
+	x := &execution{job: job, command: core.Command{Program: cmd.Program, ContainerName: cmd.ContainerName, DockerIdentity: cmd.DockerIdentity}, secrets: append([]string(nil), cmd.Secrets...), cancel: cancel, done: make(chan struct{}), file: f, catalog: catalog}
 	m.active, m.retained[job.ID] = x, x
 	m.order = append(m.order, job.ID)
 	for len(m.order) > maxRetainedJobs {
@@ -271,12 +279,21 @@ func (m *Manager) run(ctx context.Context, x *execution, cmd core.Command) {
 		m.mu.Lock()
 		defer m.mu.Unlock()
 		if m.active == x {
-			m.eventLocked(x, level, text)
+			if level == "data" {
+				if x.catalog != nil {
+					x.catalog.consume(text)
+				}
+			} else {
+				m.eventLocked(x, level, text)
+			}
 		}
 	})
 	close(progressDone)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err == nil && ctx.Err() == nil && x.catalog != nil && x.catalog.err != nil {
+		err = x.catalog.err
+	}
 	x.err = err
 	x.job.FinishedAt = timestamp()
 	switch {
@@ -296,6 +313,10 @@ func (m *Manager) run(ctx context.Context, x *execution, cmd core.Command) {
 		}
 	default:
 		x.job.Status, x.job.Message, x.job.Progress = "succeeded", "Operação concluída.", 100
+		if x.catalog != nil {
+			core.SortTables(x.catalog.tables)
+			x.job.Message = fmt.Sprintf("Consulta concluída: %d tabelas e views.", len(x.catalog.tables))
+		}
 		n := 0
 		x.job.ExitCode = &n
 	}
@@ -304,6 +325,12 @@ func (m *Manager) run(ctx context.Context, x *execution, cmd core.Command) {
 		x.job.Status, x.job.Message = "failed", redact(x.err.Error(), x.secrets)
 		if x.job.CleanupRequired {
 			x.job.Message = "Novas operações bloqueadas até confirmar o término do container. " + x.job.Message
+		}
+	}
+	if x.catalog != nil {
+		x.catalog.names = nil
+		if x.job.Status != "succeeded" {
+			x.catalog.tables = nil
 		}
 	}
 	level := "info"
@@ -445,6 +472,27 @@ func (m *Manager) Cancel(ctx context.Context, id string) (core.Job, error) {
 	}
 	m.mu.Unlock()
 	return m.Get(ctx, id)
+}
+
+// Reserve shutdown under the same lock as job creation: no new operation may
+// start between the idle check and a requested application restart.
+func (m *Manager) PrepareRestart(ctx context.Context) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if m.initErr != nil {
+		return m.initErr
+	}
+	if m.closed {
+		return fmt.Errorf("reinício já solicitado: %w", core.ErrConflict)
+	}
+	if m.active != nil {
+		return fmt.Errorf("conclua ou cancele a operação em andamento antes de reiniciar: %w", core.ErrConflict)
+	}
+	m.closed = true
+	return nil
 }
 
 func (m *Manager) Close(ctx context.Context) error {

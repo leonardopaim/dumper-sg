@@ -10,36 +10,78 @@ var ErrConflict = errors.New("operação em conflito")
 var ErrTerminationUnconfirmed = errors.New("término do container não confirmado")
 
 type Profile struct {
-	ID          int64  `json:"id"`
-	Name        string `json:"name"`
-	Host        string `json:"host"`
-	Port        int    `json:"port"`
-	User        string `json:"user"`
-	Password    string `json:"password,omitempty"`
-	Database    string `json:"database"`
-	SSL         bool   `json:"ssl"`
-	Threads     int    `json:"threads"`
-	HasPassword bool   `json:"has_password"`
+	ID           int64         `json:"id"`
+	Name         string        `json:"name"`
+	Host         string        `json:"host"`
+	Port         int           `json:"port"`
+	User         string        `json:"user"`
+	Password     string        `json:"password,omitempty"`
+	Database     string        `json:"database"`
+	SSL          bool          `json:"ssl"`
+	Threads      int           `json:"threads"`
+	HasPassword  bool          `json:"has_password"`
+	TablePresets []TablePreset `json:"table_presets"`
 }
 
-func (p Profile) Public() Profile { p.HasPassword = p.Password != ""; p.Password = ""; return p }
+type TablePreset struct {
+	Name     string   `json:"name"`
+	Database string   `json:"database"`
+	Tables   []string `json:"tables"`
+}
+
+type TableReference struct {
+	Database string `json:"database"`
+	Name     string `json:"name"`
+}
+
+type BackupTableInfo struct {
+	fileDatabase string
+	fileTable    string
+	Database     string `json:"database"`
+	Name         string `json:"name"`
+	SizeBytes    uint64 `json:"size_bytes"`
+	Rows         uint64 `json:"rows"`
+	TableType    string `json:"table_type"`
+}
+
+func (p Profile) Public() Profile {
+	p.HasPassword = p.Password != ""
+	p.Password = ""
+	if p.TablePresets == nil {
+		p.TablePresets = []TablePreset{}
+	}
+	return p
+}
 
 type BackupRequest struct {
-	ProfileID      int64  `json:"profile_id"`
-	Database       string `json:"database"`
-	DestinationDir string `json:"destination_dir"`
-	Threads        int    `json:"threads"`
-	Compress       bool   `json:"compress"`
-	SSL            bool   `json:"ssl"`
-	NonLocking     *bool  `json:"non_locking,omitempty"`
-	IgnoreRegex    string `json:"ignore_regex"`
+	ProfileID      int64    `json:"profile_id"`
+	Database       string   `json:"database"`
+	DestinationDir string   `json:"destination_dir"`
+	Threads        int      `json:"threads"`
+	Compress       bool     `json:"compress"`
+	SSL            bool     `json:"ssl"`
+	NonLocking     *bool    `json:"non_locking,omitempty"`
+	IgnoreRegex    string   `json:"ignore_regex"`
+	Tables         []string `json:"tables"`
+}
+type TableListRequest struct {
+	ProfileID int64  `json:"profile_id"`
+	Database  string `json:"database"`
+	SSL       bool   `json:"ssl"`
+}
+type TableInfo struct {
+	Name      string `json:"name"`
+	SizeBytes uint64 `json:"size_bytes"`
+	Rows      uint64 `json:"rows"`
+	TableType string `json:"table_type"`
 }
 type RestoreRequest struct {
-	ProfileID       int64  `json:"profile_id"`
-	BackupDir       string `json:"backup_dir"`
-	TargetDatabase  string `json:"target_database"`
-	Threads         int    `json:"threads"`
-	OverwriteTables bool   `json:"overwrite_tables"`
+	ProfileID       int64            `json:"profile_id"`
+	BackupDir       string           `json:"backup_dir"`
+	TargetDatabase  string           `json:"target_database"`
+	Threads         int              `json:"threads"`
+	OverwriteTables bool             `json:"overwrite_tables"`
+	Tables          []TableReference `json:"tables"`
 }
 type DatabaseRequest struct {
 	ProfileID int64  `json:"profile_id"`
@@ -68,6 +110,8 @@ type Event struct {
 	Message  string `json:"message"`
 }
 type Command struct {
+	// StdoutData routes structured output to the collector; never to job logs.
+	StdoutData     bool
 	Program        string
 	Args           []string
 	Secrets        []string

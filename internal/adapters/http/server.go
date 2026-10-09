@@ -25,6 +25,8 @@ type Operations interface {
 	StartRestore(context.Context, core.RestoreRequest) (core.Job, error)
 	StartTest(context.Context, int64) (core.Job, error)
 	StartCreateDatabase(context.Context, core.DatabaseRequest) (core.Job, error)
+	StartTableList(context.Context, core.TableListRequest) (core.Job, error)
+	Tables(context.Context, string) ([]core.TableInfo, error)
 	Get(context.Context, string) (core.Job, error)
 	List(context.Context, int) ([]core.Job, error)
 	Events(context.Context, string, int64) ([]core.Event, error)
@@ -40,27 +42,31 @@ type Options struct {
 	BackupDir      string
 	Diagnostics    func(context.Context) core.Diagnostics
 	Importer       Importer
+	Restart        func(context.Context) error
 }
 type Server struct {
-	repo    core.Repository
-	ops     Operations
-	options Options
-	token   string
-	handler http.Handler
+	repo     core.Repository
+	ops      Operations
+	options  Options
+	token    string
+	instance string
+	handler  http.Handler
 }
 
 func New(repo core.Repository, ops Operations, options Options) (*Server, error) {
-	secret := make([]byte, 32)
+	secret := make([]byte, 48)
 	if _, err := rand.Read(secret); err != nil {
 		return nil, err
 	}
-	s := &Server{repo: repo, ops: ops, options: options, token: hex.EncodeToString(secret)}
+	s := &Server{repo: repo, ops: ops, options: options, token: hex.EncodeToString(secret[:32]), instance: hex.EncodeToString(secret[32:])}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/session", s.session)
 	mux.HandleFunc("GET /api/v1/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]string{"status": "ok", "version": "1.0.0"})
 	})
 	mux.HandleFunc("GET /api/v1/diagnostics", s.diagnostics)
+	mux.HandleFunc("GET /api/v1/application", s.application)
+	mux.HandleFunc("POST /api/v1/application/restart", s.restart)
 	mux.HandleFunc("GET /api/v1/profiles", s.profiles)
 	mux.HandleFunc("POST /api/v1/profiles", s.createProfile)
 	mux.HandleFunc("GET /api/v1/profiles/{id}", s.profile)
@@ -68,6 +74,8 @@ func New(repo core.Repository, ops Operations, options Options) (*Server, error)
 	mux.HandleFunc("DELETE /api/v1/profiles/{id}", s.deleteProfile)
 	mux.HandleFunc("POST /api/v1/profiles/{id}/test", s.testConnection)
 	mux.HandleFunc("POST /api/v1/backups", s.backup)
+	mux.HandleFunc("POST /api/v1/backups/tables", s.backupTables)
+	mux.HandleFunc("POST /api/v1/tables", s.listTables)
 	mux.HandleFunc("GET /api/v1/backups", s.backups)
 	mux.HandleFunc("POST /api/v1/restores", s.restore)
 	mux.HandleFunc("POST /api/v1/databases", s.database)
@@ -75,6 +83,7 @@ func New(repo core.Repository, ops Operations, options Options) (*Server, error)
 	mux.HandleFunc("GET /api/v1/history", s.history)
 	mux.HandleFunc("GET /api/v1/jobs/{id}", s.job)
 	mux.HandleFunc("GET /api/v1/jobs/{id}/events", s.events)
+	mux.HandleFunc("GET /api/v1/jobs/{id}/tables", s.tableResults)
 	mux.HandleFunc("POST /api/v1/jobs/{id}/cancel", s.cancel)
 	mux.HandleFunc("GET /api/v1/settings", s.settings)
 	mux.HandleFunc("PATCH /api/v1/settings", s.updateSettings)
@@ -237,14 +246,15 @@ func (s *Server) createProfile(w http.ResponseWriter, r *http.Request) {
 }
 
 type profilePatch struct {
-	Name     *string `json:"name"`
-	Host     *string `json:"host"`
-	Port     *int    `json:"port"`
-	User     *string `json:"user"`
-	Password *string `json:"password"`
-	Database *string `json:"database"`
-	SSL      *bool   `json:"ssl"`
-	Threads  *int    `json:"threads"`
+	Name         *string             `json:"name"`
+	Host         *string             `json:"host"`
+	Port         *int                `json:"port"`
+	User         *string             `json:"user"`
+	Password     *string             `json:"password"`
+	Database     *string             `json:"database"`
+	SSL          *bool               `json:"ssl"`
+	Threads      *int                `json:"threads"`
+	TablePresets *[]core.TablePreset `json:"table_presets"`
 }
 
 func (s *Server) updateProfile(w http.ResponseWriter, r *http.Request) {
@@ -286,6 +296,9 @@ func (s *Server) updateProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	if v.Threads != nil {
 		p.Threads = *v.Threads
+	}
+	if v.TablePresets != nil {
+		p.TablePresets = *v.TablePresets
 	}
 	if err = core.ValidateProfile(p); err != nil {
 		fail(w, err)

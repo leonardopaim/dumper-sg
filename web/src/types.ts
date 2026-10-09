@@ -8,12 +8,13 @@ export interface Profile {
   ssl: boolean;
   threads: number;
   has_password: boolean;
+  table_presets?: TablePreset[];
 }
 export type ProfileInput = Omit<Profile, "id" | "has_password"> & {
   password?: string;
 };
 export type JobKind =
-  "backup" | "restore" | "connection_test" | "create_database";
+  "backup" | "restore" | "connection_test" | "create_database" | "table_list";
 export type JobStatus =
   "running" | "cancel_requested" | "succeeded" | "failed" | "cancelled";
 export interface Job {
@@ -47,6 +48,10 @@ export interface Diagnostics {
   version: string;
   message: string;
 }
+export interface ApplicationStatus {
+  instance_id: string;
+  restart_available: boolean;
+}
 export interface BackupInput {
   profile_id: number;
   database: string;
@@ -56,6 +61,7 @@ export interface BackupInput {
   ssl: boolean;
   non_locking: boolean;
   ignore_regex: string;
+  tables?: string[] | null;
 }
 export interface RestoreInput {
   profile_id: number;
@@ -63,5 +69,31 @@ export interface RestoreInput {
   target_database: string;
   threads: number;
   overwrite_tables: boolean;
+  tables?: TableReference[] | null;
 }
 export type Settings = Record<string, string>;
+
+export interface TableInfo {
+  name: string;
+  size_bytes: number;
+  rows: number;
+  table_type: string;
+}
+export interface TableQuery {
+  profile_id: number;
+  database: string;
+  ssl: boolean;
+}
+
+export interface TablePreset {
+  name: string;
+  database: string;
+  tables: string[];
+}
+export interface TableReference {
+  database: string;
+  name: string;
+}
+export interface BackupTableInfo extends TableInfo {
+  database: string;
+}

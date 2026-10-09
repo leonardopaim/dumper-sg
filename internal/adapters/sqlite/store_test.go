@@ -303,7 +303,7 @@ func TestRejectFutureSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec("PRAGMA user_version=2"); err != nil {
+	if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version=%d", schemaVersion+1)); err != nil {
 		t.Fatal(err)
 	}
 	db.Close()

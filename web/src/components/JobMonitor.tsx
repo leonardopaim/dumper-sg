@@ -63,6 +63,7 @@ export function JobMonitor({ controller }: { controller: JobsController }) {
   const logPanelId = `job-logs-${job.id}`;
   return (
     <section
+      id="job-monitor"
       className={`job-monitor job-${job.kind}`}
       aria-label="Acompanhamento da operação"
     >
@@ -154,14 +155,25 @@ export function JobMonitor({ controller }: { controller: JobsController }) {
                   <small> · Eventos anteriores fora da retenção</small>
                 )}
               </span>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={autoScroll}
-                  onChange={(e) => setAutoScroll(e.target.checked)}
-                />{" "}
-                Seguir logs
-              </label>
+              <div className="log-toolbar-actions">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={autoScroll}
+                    onChange={(e) => setAutoScroll(e.target.checked)}
+                  />{" "}
+                  Seguir logs
+                </label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="log-close"
+                  aria-controls={logPanelId}
+                  onClick={toggleLogs}
+                >
+                  <ChevronUp size={14} /> Fechar logs
+                </Button>
+              </div>
             </div>
             <div
               className="logs"

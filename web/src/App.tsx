@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   Archive,
-  CircleHelp,
   Database,
   HardDriveDownload,
   History as HistoryIcon,
@@ -10,11 +9,13 @@ import {
   RefreshCw,
   RotateCcw,
   Settings as SettingsIcon,
+  Terminal,
   X,
 } from "lucide-react";
 import { api, errorMessage } from "./api";
 import { Alert, Badge, Button, isActive } from "./components/ui";
 import { JobMonitor } from "./components/JobMonitor";
+import { ApplicationRestart } from "./components/ApplicationRestart";
 import { useJobs } from "./hooks/useJobs";
 import { Dashboard } from "./pages/Dashboard";
 import { Profiles } from "./pages/Profiles";
@@ -29,21 +30,35 @@ import type {
   Profile,
   Settings as SettingsMap,
 } from "./types";
-const navigation = [
+const mainNavigation = [
   { id: "dashboard", label: "Visão geral", icon: LayoutDashboard },
-  { id: "profiles", label: "Perfis de banco", icon: Database },
   { id: "backup", label: "Criar backup", icon: Archive },
   { id: "restore", label: "Restaurar", icon: RotateCcw },
   { id: "history", label: "Histórico", icon: HistoryIcon },
+];
+const managementNavigation = [
+  { id: "profiles", label: "Perfis de banco", icon: Database },
   { id: "settings", label: "Configurações", icon: SettingsIcon },
 ];
+const navigation = [...mainNavigation, ...managementNavigation];
 const getPage = () =>
   navigation.some((item) => item.id === location.hash.slice(1))
     ? location.hash.slice(1)
     : "dashboard";
+export const monitorPreferenceKey = "dumpersg.showMonitor";
+function initialMonitorVisibility() {
+  try {
+    return localStorage.getItem(monitorPreferenceKey) === "true";
+  } catch {
+    return false;
+  }
+}
 export function App() {
   const [page, setPage] = useState(getPage);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [monitorVisible, setMonitorVisible] = useState(
+    initialMonitorVisibility,
+  );
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [settings, setSettings] = useState<SettingsMap>({});
   const [backups, setBackups] = useState<BackupEntry[]>([]);
@@ -101,6 +116,38 @@ export function App() {
   }, [reloadHistory, reloadBackups]);
   const jobs = useJobs(onComplete);
   const activeJob = jobs.jobs.find((job) => isActive(job.status));
+  const showMonitor = (visible: boolean) => {
+    setMonitorVisible(visible);
+    try {
+      localStorage.setItem(monitorPreferenceKey, String(visible));
+    } catch {
+      /* A escolha continua funcionando quando o armazenamento está bloqueado. */
+    }
+  };
+  const scrollToMonitor = () =>
+    requestAnimationFrame(() =>
+      document.getElementById("activity-panel")?.scrollIntoView?.({
+        block: "nearest",
+        behavior: "smooth",
+      }),
+    );
+  const selectJob = (job: Job) => {
+    jobs.select(job);
+    showMonitor(true);
+    scrollToMonitor();
+  };
+  const toggleMonitor = () => {
+    if (monitorVisible) {
+      showMonitor(false);
+      return;
+    }
+    const job = jobs.selected || activeJob || jobs.jobs[0] || history[0];
+    if (job) selectJob(job);
+    else {
+      showMonitor(true);
+      scrollToMonitor();
+    }
+  };
   const liveJobs = new Map(jobs.jobs.map((job) => [job.id, job]));
   const liveHistory = history.map((job) => liveJobs.get(job.id) || job);
   const combinedHistory = [
@@ -163,7 +210,7 @@ export function App() {
         </a>
         <div className="sidebar-caption">WORKSPACE</div>
         <nav aria-label="Navegação principal">
-          {navigation.map((item) => (
+          {mainNavigation.map((item) => (
             <a
               key={item.id}
               href={`#${item.id}`}
@@ -173,7 +220,6 @@ export function App() {
             >
               <item.icon size={19} />
               <span>{item.label}</span>
-              {item.id === "profiles" && <small>{profiles.length}</small>}
             </a>
           ))}
         </nav>
@@ -188,10 +234,6 @@ export function App() {
             </div>
             <Database size={17} />
           </div>
-          <button className="sidebar-help" onClick={() => navigate("settings")}>
-            <CircleHelp size={17} />
-            Diagnóstico e configurações
-          </button>
           <span className="sidebar-version">
             DumperSG {version || "· API v1"}
           </span>
@@ -215,10 +257,43 @@ export function App() {
             </strong>
           </div>
           <div className="topbar-status">
+            <Button
+              type="button"
+              variant="secondary"
+              className="monitor-visibility-toggle"
+              aria-expanded={monitorVisible}
+              aria-controls="activity-panel"
+              onClick={toggleMonitor}
+            >
+              <Terminal size={15} />
+              {monitorVisible ? "Ocultar painel" : "Mostrar painel"}
+            </Button>
+            <nav className="topbar-management" aria-label="Gerenciamento">
+              {managementNavigation.map((item) => (
+                <a
+                  key={item.id}
+                  href={`#${item.id}`}
+                  className={`button secondary topbar-nav-link ${page === item.id ? "active" : ""}`}
+                  aria-label={item.label}
+                  aria-current={page === item.id ? "page" : undefined}
+                  title={item.label}
+                  onClick={() => navigate(item.id)}
+                >
+                  <item.icon size={15} />
+                  <span className="topbar-nav-label">{item.label}</span>
+                  {item.id === "profiles" && (
+                    <small className="topbar-profile-count" aria-hidden="true">
+                      {profiles.length}
+                    </small>
+                  )}
+                </a>
+              ))}
+            </nav>
+            <ApplicationRestart blocked={Boolean(activeJob)} />
             {activeJob ? (
               <button
                 className="active-job-link"
-                onClick={() => jobs.select(activeJob)}
+                onClick={() => selectJob(activeJob)}
               >
                 <Badge status={activeJob.status} />
               </button>
@@ -247,7 +322,6 @@ export function App() {
               </Button>
             </div>
           )}
-          <JobMonitor controller={jobs} />
           {loading ? (
             <div className="loading-state" role="status">
               <RefreshCw className="spin" size={24} />
@@ -262,7 +336,7 @@ export function App() {
                   history={combinedHistory}
                   diagnostics={diagnostics}
                   onNavigate={navigate}
-                  onSelect={jobs.select}
+                  onSelect={selectJob}
                 />
               )}
               {page === "profiles" && (
@@ -296,7 +370,7 @@ export function App() {
                 <History
                   history={combinedHistory}
                   reload={reloadHistory}
-                  onSelect={jobs.select}
+                  onSelect={selectJob}
                   selectedId={jobs.selected?.id}
                 />
               )}
@@ -312,6 +386,26 @@ export function App() {
               )}
             </>
           )}
+          <div id="activity-panel" hidden={!monitorVisible}>
+            {monitorVisible && (
+              <>
+                <JobMonitor controller={jobs} />
+                {!jobs.selected && !jobs.error && (
+                  <section
+                    className="job-monitor empty"
+                    aria-label="Acompanhamento da operação"
+                  >
+                    <Terminal size={22} />
+                    <strong>Nenhuma operação selecionada</strong>
+                    <p>
+                      Inicie uma operação ou selecione os detalhes no histórico
+                      para acompanhar o progresso e os logs.
+                    </p>
+                  </section>
+                )}
+              </>
+            )}
+          </div>
           <footer className="main-footer">
             <span>Seus dados permanecem no seu ambiente.</span>
             <span>MYDUMPER + MYLOADER · POWERED BY GO</span>

@@ -5,22 +5,22 @@ Aplicação local para backups/restores MySQL com **core Go, SQLite e frontend R
 ## Recursos
 
 - Perfis de conexão com teste de conexão, SSL e threads padrão.
-- Backup MyDumper com compressão, regex de exclusão e modo sem bloqueio por padrão.
-- Restore MyLoader somente em MySQL local e banco isolado, com opção explícita de sobrescrita (`--drop-table=DROP`, compatível com MyLoader 1.0.3).
+- Backup MyDumper com seleção de tabelas por tamanho, compressão, regex de exclusão e modo sem bloqueio por padrão.
+- Restore MyLoader somente em MySQL local e banco isolado, com confirmação por resumo dos dados e opção explícita de sobrescrita (`--drop-table=DROP`, compatível com MyLoader 1.0.3).
 - Criação do banco destino com as mesmas restrições do restore.
-- Jobs independentes da tela, monitor no topo, barra de progresso estimado, cancelamento e histórico persistido.
-- Layout compacto com campos em colunas no desktop. Logs opcionais, ocultos por padrão; a preferência de exibição é salva no navegador.
+- Jobs independentes da tela, monitor abaixo do conteúdo principal, barra de progresso estimado, cancelamento e histórico persistido.
+- Layout compacto com campos em colunas no desktop. Painel de processos e logs oculto por padrão, com controle geral Mostrar painel/Ocultar painel sempre acessível na barra superior; a preferência é salva no navegador. A exibição dos eventos dentro do painel tem controle separado.
 - Diretório de backup configurável, catálogo de backups e importação do SQLite legado.
 
 ## Executar no Windows
 
-Requisitos de build: Go 1.26+, Node.js 24 e npm. Requisitos de operação nesta máquina: Docker Engine instalado diretamente na distribuição Ubuntu do WSL2, usuário Linux com permissão para usar Docker e imagens MyDumper/MyLoader e MySQL disponíveis. Docker Desktop não é necessário. O executável Windows chama `wsl.exe --distribution Ubuntu --exec docker` e converte as origens dos volumes com `wslpath` da mesma distribuição.
+Requisitos de build: Go 1.26+, Node.js 24 e npm. Para executar, use Docker Desktop com containers Linux ou Docker Engine em uma distribuição WSL2, com permissão para usar Docker e imagens MyDumper/MyLoader e MySQL disponíveis. O modo padrão detecta o Docker acessível pelo Windows e, se indisponível, tenta a distribuição WSL padrão. Nesta máquina o Engine está no Ubuntu/WSL.
 
 ```powershell
 wsl.exe --distribution Ubuntu --exec docker pull mydumper/mydumper:latest
-wsl.exe --distribution Ubuntu --exec docker pull mysql:8.4
+wsl.exe --distribution Ubuntu --exec docker pull mysql:8.4.3
 .\scripts\build.ps1
-.\scripts\start.ps1 -DockerRuntime wsl -WslDistro Ubuntu
+.\scripts\start.ps1
 ```
 
 Abra **http://127.0.0.1:8787**. O executável em `dist/dumpersg.exe` inclui os arquivos do frontend; Node.js e Go não são necessários para rodar esse executável já compilado. Docker continua necessário para as operações de banco. Ctrl+C encerra o serviço e cancela o job ativo, aguardando a confirmação de limpeza do container por até 90 segundos. Baixe as imagens Docker previamente para evitar timeout na primeira operação.
@@ -31,13 +31,26 @@ Dados padrão: `%APPDATA%\DumperSG\web` com `dumper_sg.sqlite3`, `backups` e `lo
 .\scripts\start.ps1 -DataDir C:\DumperSG\dados
 ```
 
-## Docker diretamente no WSL
+## Escolher Docker Desktop ou WSL
 
-O modo padrão `auto` tenta o daemon do cliente nativo e, se não responder no Windows, seleciona WSL. `-DockerRuntime wsl -WslDistro Ubuntu` fixa explicitamente o ambiente desta máquina; `native` atende instalações que já possuem cliente/daemon acessível pelo sistema atual. A seleção permanece fixa durante toda a execução, cancelamento e limpeza. Jobs registram a identidade do daemon para impedir que uma verificação em outro ambiente libere uma operação pendente.
+O modo padrão `auto` tenta o daemon do cliente nativo e, se não responder no Windows, tenta a distribuição WSL padrão. Se nenhum daemon estiver disponível na abertura, a interface continua acessível e a descoberta é tentada novamente ao verificar o Docker ou executar uma operação. Assim, o Docker Desktop pode ser aberto depois do DumperSG. Após encontrar um daemon, o transporte permanece fixo até reiniciar o backend. Jobs registram sua identidade para impedir que uma verificação em outro ambiente libere uma operação pendente.
 
-Caminhos como `C:\DumperSG\dados` continuam sendo informados na interface Windows. O adaptador converte somente a origem da montagem para o caminho Linux (por exemplo `/mnt/c/DumperSG/dados`) e verifica sua existência na distribuição antes de criar o container. Não é necessário alterar o PATH do Windows nem expor o socket Docker por TCP.
+Para escolher explicitamente:
 
-Com a rede host padrão, `localhost`/`127.0.0.1` nos perfis apontam para o host Linux do daemon WSL. MySQL instalado no WSL ou publicado ali pode usar esses endereços e a porta correspondente. Se MySQL roda no Windows, o acesso por loopback depende do modo mirrored do WSL; em NAT, o endereço do host Windows é diferente. `host.docker.internal` não é criado automaticamente pelo Docker Engine no WSL. As restrições de restore local permanecem no core.
+```powershell
+.\scripts\start.ps1 -DockerRuntime native
+.\scripts\start.ps1 -DockerRuntime wsl -WslDistro Ubuntu
+```
+
+No Docker Desktop, mantenha o aplicativo aberto e o modo **Linux containers**. O contexto ativo do cliente Docker determina o daemon nativo usado. O DumperSG reconhece Desktop pelo `docker info`, preserva os caminhos Windows dos volumes e usa a rede padrão dos containers. Perfis com `localhost`, `127.0.0.1` ou `::1` são traduzidos para `host.docker.internal` somente no comando executado; o perfil salvo permanece igual. Endereços remotos são preservados. Isso dispensa habilitar host networking no Desktop. Se houver restrição de compartilhamento de arquivos no Desktop, libere o diretório escolhido para os backups.
+
+Os diagnósticos informam **Docker Desktop** ou **Docker Engine** e o transporte escolhido. Se ambos estiverem instalados, `auto` prefere o daemon acessível pelo Windows. Imagens são locais a cada daemon; ao trocar de ambiente, baixe-as no daemon selecionado.
+
+Referências: [rede no Docker Desktop](https://docs.docker.com/desktop/features/networking/networking-how-tos/) e [host networking e requisito de habilitação no Desktop](https://docs.docker.com/engine/network/drivers/host/).
+
+No transporte WSL, caminhos como `C:\DumperSG\dados` continuam sendo informados na interface Windows. O adaptador converte somente a origem da montagem para o caminho Linux (por exemplo `/mnt/c/DumperSG/dados`) e verifica sua existência na distribuição antes de criar o container. Não é necessário alterar o PATH do Windows nem expor o socket Docker por TCP.
+
+No Docker Engine no WSL, com a rede host padrão, `localhost`/`127.0.0.1` nos perfis apontam para o host Linux do daemon WSL. MySQL instalado no WSL ou publicado ali pode usar esses endereços e a porta correspondente. Se MySQL roda no Windows, o acesso por loopback depende do modo mirrored do WSL; em NAT, o endereço do host Windows é diferente. `host.docker.internal` não é criado automaticamente pelo Docker Engine no WSL. As restrições de restore local permanecem no core.
 
 O backend aceita `-mysql-image mysql:8.4.3` para aproveitar essa imagem já instalada, ou outra tag explícita. Para o script de inicialização, use `-MySQLImage mysql:8.4.3`.
 
@@ -64,6 +77,18 @@ Um job de banco por vez evita conflitos locais. Se a limpeza de um container nã
 
 As senhas continuam armazenadas localmente no SQLite, como no desktop; elas não são retornadas pela API nem gravadas nos eventos de jobs. Proteja o diretório de dados com as permissões do Windows. Logs têm retenção limitada em memória e arquivos por job. As versões de imagem podem ser configuradas por `-docker-image` e `-mysql-image`; confirme o suporte às opções no ambiente de destino.
 
+## Selecionar tabelas e confirmar restauração
+
+Em Criar backup, abra o módulo de tabelas e carregue a lista do perfil/banco de origem. Os objetos aparecem do maior para o menor, com busca e seleção em lote. O modo padrão inclui todas as tabelas sem precisar consultar a lista; no modo personalizado, selecione pelo menos uma. Preencha o banco de origem no formulário ou no perfil antes de consultar; o botão informa e foca o campo quando ele está vazio. A escolha é lembrada separadamente por perfil e banco. A consulta usa o Docker configurado e não pode executar junto de outro job.
+
+O tamanho é uma estimativa de dados e índices informada pelo MySQL, não o tamanho final dos arquivos comprimidos. Views também aparecem na lista. Tabelas relacionadas não são incluídas automaticamente e a regex de exclusão continua valendo sobre os objetos selecionados. Ao atualizar o catálogo, revise objetos adicionados/removidos.
+
+Em Perfis de banco, use **Seleções de tabelas** para consultar a origem e salvar conjuntos nomeados. Eles ficam no SQLite junto do perfil e podem ser aplicados no backup ou na restauração. Na restauração, escolha a pasta e abra a seleção para carregar os objetos dos arquivos, ordenados pelo tamanho exportado. O conjunto identifica banco e nomes de origem e pode vir de outro perfil; isso não altera o perfil de destino. Revise nomes ausentes e dependências antes de executar. O modo personalizado exige ao menos uma tabela. Restore parcial não inclui rotinas/eventos globais.
+
+Ao restaurar, confira o resumo com perfil, servidor, banco destino, pasta, threads e sobrescrita; confirme ou cancele pelo botão. Não é necessário redigitar o banco. Sobrescrever tabelas continua desmarcado ao voltar ao formulário e o destino continua restrito a um banco local diferente do padrão do perfil.
+
+Referências técnicas: [metadados e tamanhos no MySQL](https://dev.mysql.com/doc/refman/8.4/en/information-schema-tables-table.html) e [filtros de tabelas do MyDumper](https://mydumper.github.io/mydumper/docs/html/regex.html).
+
 ## Validação
 
 ```powershell
@@ -86,4 +111,10 @@ go test ./internal/adapters/docker -run '^TestWSLCancellationIntegration$' -coun
 Remove-Item Env:DUMPERSG_TEST_WSL_INTEGRATION
 ```
 
-A integração cria um MySQL descartável, testa conexão/criação de banco/backup/restore, rejeita tabelas existentes sem sobrescrita, valida a sobrescrita explícita e os níveis dos logs, compara os dados restaurados e remove seu container/volumes próprios. Os artefatos ficam em `data/integration-wsl-*` (ignorados pelo Git). O teste Go adicional verifica cancelamento com Alpine descartável. Ambos foram aprovados no Ubuntu WSL desta máquina.
+A integração cria um MySQL descartável, testa conexão/criação de banco/backup/restore, rejeita tabelas existentes sem sobrescrita, valida a sobrescrita explícita e os níveis dos logs, compara os dados restaurados e remove seu container/volumes próprios. Também confere catálogo por tamanho, views, banco inexistente e backups seletivos com nomes especiais e regex cumulativa, seleções persistidas no perfil, catálogo de arquivos e restauração parcial que preserva tabelas desmarcadas. Os artefatos ficam em `data/integration-wsl-*` (ignorados pelo Git). O teste Go adicional verifica cancelamento com Alpine descartável. Ambos foram aprovados no Ubuntu WSL desta máquina.
+
+## Campos lembrados na interface
+
+Os perfis cadastrados e o diretório padrão são persistidos no SQLite da aplicação. Os formulários de backup e restauração lembram separadamente o último perfil e os valores preenchidos no navegador, incluindo pasta, banco e threads. A seleção é recuperada por ID mesmo se a lista de perfis mudar de ordem; se o perfil for removido, um perfil disponível é selecionado e o destino de restauração é limpo. A opção de sobrescrever tabelas não é memorizada.
+
+Esses campos são salvos automaticamente, sem credenciais, no armazenamento do navegador para a origem usada. localhost, 127.0.0.1 e as portas 8787/8788 têm armazenamentos independentes. Use o mesmo endereço ao voltar; limpar os dados do site também remove essas preferências. Se o navegador bloquear o armazenamento, os formulários continuam funcionando com seus valores padrão.

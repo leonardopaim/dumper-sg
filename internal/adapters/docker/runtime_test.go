@@ -151,7 +151,11 @@ func TestRuntimeHelper(t *testing.T) {
 		if os.Getenv("DUMPERSG_NATIVE_UP") != "true" {
 			os.Exit(1)
 		}
-		fmt.Println("28.2.2")
+		if len(args) > 1 && args[1] == "info" {
+			fmt.Println(`{"id":"daemon-test","os_type":"linux","operating_system":"Docker Desktop","name":"docker-desktop"}`)
+		} else {
+			fmt.Println("28.2.2")
+		}
 		os.Exit(0)
 	}
 	for len(args) > 0 && args[0] != "--exec" {
@@ -168,7 +172,7 @@ func TestRuntimeHelper(t *testing.T) {
 		fmt.Println("/mnt/c/Test User/backup € $(not-a-command)")
 	case "docker":
 		if args[1] == "info" {
-			fmt.Println("daemon-test")
+			fmt.Println(`{"id":"daemon-test","os_type":"linux","operating_system":"Ubuntu","name":"ubuntu"}`)
 		} else {
 			fmt.Println("28.2.2")
 		}

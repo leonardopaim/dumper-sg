@@ -1,6 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Archive, ArrowRight, SlidersHorizontal } from "lucide-react";
 import { api, errorMessage } from "../api";
+import {
+  useTableSelection,
+  tableSelectionKey,
+} from "../hooks/useTableSelection";
+import { PresetPicker } from "../components/PresetPicker";
+import { TableSelector } from "../components/TableSelector";
+import { backupDraftKey, useOperationDraft } from "../hooks/useOperationDraft";
 import {
   Alert,
   Button,
@@ -23,18 +30,27 @@ export function Backup({
   onJob: (job: Job) => void;
   onProfiles: () => void;
 }) {
-  const [form, setForm] = useState<BackupInput>({
-    profile_id: profiles[0]?.id || 0,
-    database: profiles[0]?.database || "",
-    destination_dir: "",
-    threads: 0,
-    compress: true,
-    ssl: profiles[0]?.ssl || false,
-    non_locking: true,
-    ignore_regex: "",
-  });
+  const [form, setForm] = useOperationDraft<BackupInput>(
+    backupDraftKey,
+    () => ({
+      profile_id: profiles[0]?.id || 0,
+      database: profiles[0]?.database || "",
+      destination_dir: "",
+      threads: 0,
+      compress: true,
+      ssl: profiles[0]?.ssl || false,
+      non_locking: true,
+      ignore_regex: "",
+    }),
+  );
+  const databaseInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const tableSelection = useTableSelection(
+    { profile_id: form.profile_id, database: form.database, ssl: form.ssl },
+    onJob,
+  );
+  const emptySelection = tableSelection.selection?.length === 0;
   const profile = profiles.find((item) => item.id === form.profile_id);
   const selectProfile = (id: number) => {
     const selected = profiles.find((item) => item.id === id);
@@ -46,17 +62,38 @@ export function Backup({
     }));
   };
   useEffect(() => {
-    if (!profiles.some((item) => item.id === form.profile_id))
+    if (
+      profiles.length &&
+      !profiles.some((item) => item.id === form.profile_id)
+    )
       selectProfile(profiles[0]?.id || 0);
-  }, [profiles]);
+    else {
+      const current = profiles.find((item) => item.id === form.profile_id);
+      if (!form.database.trim() && current?.database)
+        setForm((data) => ({ ...data, database: current.database }));
+    }
+  }, [profiles, form.profile_id, profile?.database]);
   const update = <K extends keyof BackupInput>(key: K, value: BackupInput[K]) =>
     setForm((data) => ({ ...data, [key]: value }));
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError("");
+    if (emptySelection || tableSelection.loading || active) {
+      setError(
+        emptySelection
+          ? "Selecione ao menos uma tabela ou use todas as tabelas."
+          : "Aguarde a operação em andamento.",
+      );
+      return;
+    }
     setBusy(true);
     try {
-      onJob(await api.backup(form));
+      const data = { ...form, tables: tableSelection.selection };
+      if (new TextEncoder().encode(JSON.stringify(data)).length > 65536)
+        throw new Error(
+          "A seleção excede o limite de tamanho da requisição. Reduza a lista ou use todas as tabelas no modo automático.",
+        );
+      onJob(await api.backup(data));
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -98,8 +135,18 @@ export function Backup({
                     ))}
                   </select>
                 </Field>
-                <Field label="Banco de origem" className="full">
+                <Field
+                  label="Banco de origem"
+                  className="full"
+                  hint={
+                    !form.database.trim()
+                      ? "Informe o nome do banco aqui para habilitar a consulta de tabelas."
+                      : undefined
+                  }
+                >
                   <input
+                    ref={databaseInput}
+                    aria-label="Banco de origem"
                     required
                     value={form.database}
                     onChange={(e) => update("database", e.target.value)}
@@ -181,6 +228,44 @@ export function Backup({
                 />
               </div>
             </section>
+
+            <TableSelector
+              controller={tableSelection}
+              active={active}
+              canQuery={!!profile && !!form.database.trim()}
+              scope={tableSelectionKey(form.profile_id, form.database)}
+              ignoreRegex={form.ignore_regex}
+              missingReason={
+                !profile
+                  ? "Selecione um perfil de conexão acima."
+                  : "Informe o banco de origem acima para consultar as tabelas."
+              }
+              onInvalidQuery={() => databaseInput.current?.focus()}
+              extra={
+                <PresetPicker
+                  profiles={profiles}
+                  onApply={(source, preset) => {
+                    tableSelection.applyTo(
+                      source.id,
+                      preset.database,
+                      preset.tables,
+                    );
+                    setForm((data) => ({
+                      ...data,
+                      profile_id: source.id,
+                      database: preset.database,
+                      ssl: source.ssl,
+                    }));
+                  }}
+                />
+              }
+            />
+            {emptySelection && (
+              <Alert>
+                Nenhuma tabela selecionada. Ajuste a seleção de tabelas antes de
+                iniciar.
+              </Alert>
+            )}
             {error && <Alert>{error}</Alert>}
             <div className="form-footer">
               <span>
@@ -188,7 +273,11 @@ export function Backup({
                   ? "Aguarde a operação em andamento."
                   : "O backup continua ao navegar entre telas."}
               </span>
-              <Button type="submit" disabled={active} busy={busy}>
+              <Button
+                type="submit"
+                disabled={active || tableSelection.loading || emptySelection}
+                busy={busy}
+              >
                 <Archive size={17} />
                 Iniciar backup
                 <ArrowRight size={16} />

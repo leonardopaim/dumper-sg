@@ -2,7 +2,8 @@
 param(
     [ValidateSet('Install','Status','Remove')][string]$Action = 'Status',
     [string]$DataDir = (Join-Path $env:APPDATA 'DumperSG\web'),
-    [string]$WslDistro = 'Ubuntu',
+    [ValidateSet('auto','native','wsl')][string]$DockerRuntime = 'auto',
+    [string]$WslDistro = '',
     [string]$MySQLImage = 'mysql:8.4.3',
     [string]$DumperImage = 'mydumper/mydumper:latest',
     [switch]$StartNow
@@ -32,13 +33,15 @@ if ($Action -eq 'Remove') {
 }
 if (-not (Test-Path -LiteralPath $taskExe -PathType Leaf)) { throw 'Run scripts/build.ps1 before installing autostart.' }
 $taskDataDir = [IO.Path]::GetFullPath($DataDir)
-foreach ($taskValue in @($taskConfigPath,$taskLauncher,$taskDataDir,$WslDistro,$MySQLImage,$DumperImage)) {
+foreach ($taskValue in @($taskConfigPath,$taskLauncher,$taskDataDir,$MySQLImage,$DumperImage)) {
     if ([string]::IsNullOrWhiteSpace($taskValue) -or $taskValue -match '["\r\n]') { throw 'Invalid startup parameter.' }
 }
+. (Join-Path $PSScriptRoot 'startup-config.ps1')
+$taskConfig = [ordered]@{ version=2; executable=$taskExe; address='127.0.0.1:8787'; dataDir=$taskDataDir; dockerRuntime=$DockerRuntime; wslDistro=$WslDistro; mysqlImage=$MySQLImage; dumperImage=$DumperImage }
+$null = Get-DumperStartupArguments -Config ([PSCustomObject]$taskConfig)
 if ($taskExisting -and $taskExisting.State -eq 'Running') { throw 'Autostart is already running; use Status. Reconfigure after the application has exited.' }
 if ($PSCmdlet.ShouldProcess($taskName, 'Install logon startup for the current Windows user')) {
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $taskConfigPath) | Out-Null
-    $taskConfig = [ordered]@{ version=1; executable=$taskExe; address='127.0.0.1:8787'; dataDir=$taskDataDir; wslDistro=$WslDistro; mysqlImage=$MySQLImage; dumperImage=$DumperImage }
     [IO.File]::WriteAllText($taskConfigPath, ($taskConfig | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
     $taskPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $taskArgs = '-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $taskLauncher + '" -ConfigPath "' + $taskConfigPath + '"'

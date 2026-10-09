@@ -9,12 +9,16 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"dumpersg/internal/core"
 )
 
 type Executor struct {
+	selectionMu    sync.Mutex
+	autoPending    bool
+	desktop        bool
 	runtime        string
 	distribution   string
 	processFactory func(context.Context, string, ...string) *exec.Cmd
@@ -25,8 +29,8 @@ type Executor struct {
 func New() *Executor { return &Executor{} }
 
 func (e *Executor) Diagnostics(ctx context.Context) core.Diagnostics {
-	if e.runtime == "wsl" && e.distribution == "" {
-		return core.Diagnostics{Message: "Distribuição WSL não identificada. Reinicie com -wsl-distro Ubuntu ou o nome da distribuição do Docker."}
+	if _, err := e.inspectDaemon(ctx); err != nil {
+		return core.Diagnostics{Message: err.Error()}
 	}
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
@@ -34,7 +38,14 @@ func (e *Executor) Diagnostics(ctx context.Context) core.Diagnostics {
 	if err != nil {
 		return core.Diagnostics{Message: "Docker não respondeu via " + e.runtimeDescription() + ". Verifique o daemon e as permissões do usuário."}
 	}
-	return core.Diagnostics{Available: true, Version: strings.TrimSpace(output), Message: "Docker disponível via " + e.runtimeDescription() + "."}
+	e.selectionMu.Lock()
+	desktop := e.desktop
+	e.selectionMu.Unlock()
+	engine := "Docker Engine"
+	if desktop {
+		engine = "Docker Desktop"
+	}
+	return core.Diagnostics{Available: true, Version: strings.TrimSpace(output), Message: engine + " disponível via " + e.runtimeDescription() + "."}
 }
 
 var validContainer = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{1,127}$`)
@@ -43,7 +54,10 @@ var validContainer = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{1,127}$`)
 // Docker control commands use a separate bounded context: killing the attached
 // client alone does not stop a container on the Docker daemon.
 func (e *Executor) Run(ctx context.Context, command core.Command, output func(string, string)) error {
-	if e.runtime == "wsl" && e.distribution == "" {
+	e.selectionMu.Lock()
+	runMode, runDistro := e.runtime, e.distribution
+	e.selectionMu.Unlock()
+	if runMode == "wsl" && runDistro == "" {
 		return fmt.Errorf("distribuição WSL deve ser fixada antes da execução")
 	}
 	if command.Program != "docker" || len(command.Args) < 4 || command.Args[0] != "run" || !validContainer.MatchString(command.ContainerName) {
@@ -70,6 +84,7 @@ func (e *Executor) Run(ctx context.Context, command core.Command, output func(st
 		return err
 	}
 	var err error
+	createArgs = e.desktopNetworking(createArgs)
 	createArgs, err = e.translateMounts(ctx, createArgs)
 	if err != nil {
 		return err
@@ -93,6 +108,9 @@ func (e *Executor) Run(ctx context.Context, command core.Command, output func(st
 	if ctx.Err() == nil {
 		process := e.command(ctx, "start", "--attach", command.ContainerName)
 		stdout := &lineWriter{emit: output, level: "info", secrets: command.Secrets}
+		if command.StdoutData {
+			stdout.level, stdout.secrets = "data", nil
+		}
 		stderr := &lineWriter{emit: output, level: "error", secrets: command.Secrets}
 		process.Stdout, process.Stderr = stdout, stderr
 		// Bound waits if an inherited pipe remains open after the CLI exits.
@@ -156,7 +174,7 @@ func (e *Executor) VerifyTermination(ctx context.Context, command core.Command) 
 		if err != nil || identity != command.DockerIdentity {
 			return fmt.Errorf("%w: use o mesmo daemon e distribuição WSL da operação pendente", core.ErrTerminationUnconfirmed)
 		}
-	} else if e.runtime == "wsl" {
+	} else if e.isWSL() {
 		return fmt.Errorf("%w: operação antiga sem identidade do daemon; verifique no transporte nativo original", core.ErrTerminationUnconfirmed)
 	}
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
@@ -192,7 +210,7 @@ func (e *Executor) command(ctx context.Context, args ...string) *exec.Cmd {
 	if e.commandFactory != nil {
 		return e.commandFactory(ctx, args...)
 	}
-	if e.runtime == "wsl" {
+	if e.isWSL() {
 		return e.hostCommand(ctx, "wsl.exe", e.wslArgs("docker", args...)...)
 	}
 	return e.hostCommand(ctx, "docker", args...)
@@ -219,8 +237,12 @@ type lineWriter struct {
 // GLib/MyDumper writes every severity to stderr, including normal Message logs.
 // Recognize its structured prefix; keep the stream level for unknown text.
 var glibLevel = regexp.MustCompile(`(?i)^\s*\*\*\s+(?:\([^)]+\):\s*)?(message|info|debug|warning|critical|error)(?:\s*\*\*)?:`)
+var mysqlWarning = regexp.MustCompile(`(?i)^\s*mysql(?:\.exe)?:\s*\[warning\]`)
 
 func logLevel(line, fallback string) string {
+	if mysqlWarning.MatchString(line) {
+		return "warning"
+	}
 	match := glibLevel.FindStringSubmatch(line)
 	if len(match) < 2 {
 		return fallback
@@ -262,6 +284,9 @@ func (w *lineWriter) flush() {
 	} else if len(w.line) > 0 {
 		line := strings.TrimSuffix(string(w.line), "\r")
 		level := logLevel(line, w.level)
+		if w.level == "data" {
+			level = "data"
+		}
 		for _, secret := range w.secrets {
 			if secret != "" {
 				line = strings.ReplaceAll(line, secret, "***")

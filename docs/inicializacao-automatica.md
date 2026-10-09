@@ -6,18 +6,18 @@ O DumperSG inicia **ao entrar na sua conta do Windows**, por uma tarefa no Agend
 
 O Nginx instalado em `C:\nginx` utiliza WinSW 2.12 em `service\nginx-service.exe`, com serviço `SommusNginx` executado como `LocalSystem`. O wrapper inicia o próprio Nginx; o Nginx não inicia o backend Go. Reutilizar essa conta para o DumperSG perderia acesso ao WSL e ao diretório de dados da sua conta. Por isso o backend usa a tarefa de login, e o Nginx existente pode atendê-lo como proxy.
 
-A aplicação fica disponível em `http://127.0.0.1:8787`. O Docker no Ubuntu/WSL deve estar disponível para executar operações de banco; sua ausência não impede abrir a interface. Ao sair da conta ou desligar o Windows, o processo termina. Isso não é execução antes do login.
+A aplicação fica disponível em `http://127.0.0.1:8787`. Docker Desktop com containers Linux ou Docker Engine no WSL deve estar disponível para executar operações de banco; sua ausência não impede abrir a interface. O modo automático tenta novamente a descoberta se o Docker for aberto depois. Ao sair da conta ou desligar o Windows, o processo termina. Isso não é execução antes do login.
 
 ## Instalar e consultar
 
-Com `dist\dumpersg.exe` compilado, execute na conta proprietária do WSL:
+Com `dist\dumpersg.exe` compilado, execute na conta que utiliza o Docker:
 
 ```powershell
 .\scripts\autostart.ps1 -Action Install -StartNow
 .\scripts\autostart.ps1 -Action Status
 ```
 
-Sem `-StartNow`, a tarefa começa no próximo login. Não inicie outra cópia manual na mesma porta. `Install` não reconfigura uma tarefa em execução. Para outro diretório de dados ou imagem, informe as opções na instalação:
+Sem `-StartNow`, a tarefa começa no próximo login. Novas instalações usam `-DockerRuntime auto`; para fixar Desktop/cliente Windows, use `-DockerRuntime native`, ou para Engine no WSL, `-DockerRuntime wsl -WslDistro Ubuntu`. Configurações antigas de versão 1 continuam usando a distribuição WSL salva. Não inicie outra cópia manual na mesma porta. `Install` não reconfigura uma tarefa em execução. Para outro diretório de dados ou imagem, informe as opções na instalação:
 
 ```powershell
 .\scripts\autostart.ps1 -Action Install -DataDir C:\DumperSG\dados -WslDistro Ubuntu -MySQLImage mysql:8.4.3
@@ -26,6 +26,28 @@ Sem `-StartNow`, a tarefa começa no próximo login. Não inicie outra cópia ma
 A tarefa tem nome `DumperSG-<SID da conta>`. A configuração fica em `data\autostart-<SID>.json` no projeto, sem credenciais de banco. Mantenha o projeto e o executável nesse caminho; reinstale a tarefa se mover a pasta. Logs da inicialização ficam em `<diretório de dados>\startup\stdout.log` e `stderr.log`, com uma cópia `.previous` da execução anterior. Os logs dos backups/restores continuam em `logs`.
 
 Para atualizar o executável, conclua os jobs, saia da aplicação e então compile. Não substitua um executável em execução. Se precisar encerrar a cópia automática, use o Agendador de Tarefas para finalizar a tarefa e confira se `dumpersg.exe` encerrou; evite esse procedimento durante backup/restore. Ao reiniciar, o core verifica containers de operações interrompidas antes de liberar novas operações.
+
+## Reiniciar sem encerrar processos manualmente
+
+O botão **Reiniciar** na barra superior pede confirmação, aguarda a nova instância e recarrega a página. Funciona quando o backend foi iniciado por `scripts/start.ps1` ou pela tarefa automática. O reinício normal é recusado enquanto houver uma operação ativa ou cancelamento em andamento. Pendências de limpeza de containers são preservadas e continuam bloqueando novas operações de banco após o reinício. Perfis, seleções, configurações e histórico são preservados. A sessão da API é renovada.
+
+No PowerShell, a partir da pasta do projeto:
+
+```powershell
+.\scripts\restart.ps1
+```
+
+O comando solicita o mesmo reinício controlado e espera a aplicação voltar. Para uma instância manual em outra porta, use `-Address 127.0.0.1:PORTA`, ou `-ConfigPath` para uma configuração de launcher específica.
+
+Se o backend estiver totalmente travado e não responder à interface ou à API:
+
+```powershell
+.\scripts\restart.ps1 -Force
+```
+
+O modo forçado reinicia apenas a cópia da tarefa automática desta instalação e conta Windows. Confere executável, configuração, PID e horário de início registrados pelo launcher antes de encerrar o processo. Se a API responder com uma operação ativa, recusa a interrupção. Quando não é possível consultar o estado, o encerramento forçado pode interromper um backup/restore; ao voltar, o core mantém a proteção de operações e containers pendentes. Não remove containers nem reinicia Docker ou Nginx.
+
+O launcher mantém a tarefa em execução durante um reinício solicitado (código interno 75). Falhas inesperadas continuam sendo reportadas ao Agendador para sua política de tentativas. Um executável aberto diretamente, sem os scripts supervisores, informa que o reinício pela interface não está disponível.
 
 ## Proxy opcional no Nginx existente
 
@@ -40,7 +62,7 @@ Abra **http://127.0.0.1:8788** ou **http://localhost:8788**. Nesta máquina, exe
 O backend iniciado automaticamente já permite essas duas origens exatas. Para iniciar manualmente com o proxy:
 
 ```powershell
-.\scripts\start.ps1 -DockerRuntime wsl -WslDistro Ubuntu -MySQLImage mysql:8.4.3 -Origins 'http://127.0.0.1:8788,http://localhost:8788'
+.\scripts\start.ps1 -Origins 'http://127.0.0.1:8788,http://localhost:8788'
 ```
 
 O proxy preserva o cabeçalho Origin, rejeita outros Host e mantém as validações de sessão do backend. As portas continuam acessíveis somente na própria máquina. Para outra instalação Nginx, use `-NginxDir`; ela precisa incluir `conf/sites-enabled/*.conf` dentro de `http`. `-NoReload` apenas instala e valida, deixando a ativação para um reload posterior. `-WhatIf` mostra a ação sem modificar arquivos.
@@ -64,6 +86,8 @@ Remover a tarefa impede os próximos inícios automáticos e deixa uma aplicaç�
 
 ```powershell
 .\scripts\smoke.ps1
+.\scripts\test-startup-config.ps1
+.\scripts\smoke-restart.ps1
 .\scripts\smoke-startup.ps1
 ```
 

@@ -22,8 +22,15 @@ import (
 	"dumpersg/web"
 )
 
+var errRestart = errors.New("reinício solicitado")
+
+const restartExitCode = 75
+
 func main() {
 	if err := run(); err != nil {
+		if errors.Is(err, errRestart) {
+			os.Exit(restartExitCode)
+		}
 		log.Print(err)
 		os.Exit(1)
 	}
@@ -37,6 +44,7 @@ func run() error {
 	hostNetwork := flag.Bool("host-network", true, "usar rede host do Docker (como o legado)")
 	dockerRuntime := flag.String("docker-runtime", "auto", "execução Docker: auto, native ou wsl")
 	wslDistro := flag.String("wsl-distro", "", "distribuição WSL do Docker (padrão do WSL quando omitida)")
+	restartEnabled := flag.Bool("restart-enabled", false, "habilitar reinício quando iniciado por um launcher supervisor")
 	flag.Parse()
 	host, port, err := net.SplitHostPort(*addr)
 	if err != nil {
@@ -77,7 +85,18 @@ func run() error {
 			allowedOrigins = append(allowedOrigins, origin)
 		}
 	}
-	handler, err := httpapi.New(repo, manager, httpapi.Options{AllowedHosts: allowedHosts, AllowedOrigins: allowedOrigins, Assets: assets, BackupDir: cfg.BackupDir, Diagnostics: executor.Diagnostics, Importer: repo})
+	restartRequested := make(chan struct{}, 1)
+	options := httpapi.Options{AllowedHosts: allowedHosts, AllowedOrigins: allowedOrigins, Assets: assets, BackupDir: cfg.BackupDir, Diagnostics: executor.Diagnostics, Importer: repo}
+	if *restartEnabled {
+		options.Restart = func(ctx context.Context) error {
+			if err := manager.PrepareRestart(ctx); err != nil {
+				return err
+			}
+			restartRequested <- struct{}{}
+			return nil
+		}
+	}
+	handler, err := httpapi.New(repo, manager, options)
 	if err != nil {
 		return err
 	}
@@ -91,18 +110,33 @@ func run() error {
 	finished := make(chan error, 1)
 	go func() { finished <- server.Serve(listener) }()
 	fmt.Printf("DumperSG disponível em http://%s\nDados: %s\nCtrl+C encerra o serviço e cancela a operação ativa.\n", *addr, dataPath)
+	restarting := false
 	select {
 	case err = <-finished:
 		if !errors.Is(err, http.ErrServerClosed) {
 			return err
 		}
 	case <-ctx.Done():
+	case <-restartRequested:
+		restarting = true
 	}
 	shutdown, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	closeErr := manager.Close(shutdown)
 	serverErr := server.Shutdown(shutdown)
-	return errors.Join(closeErr, serverErr)
+	// Restarting the HTTP backend does not terminate unconfirmed containers.
+	// Their persisted guards are recovered by the next manager instance.
+	if restarting && errors.Is(closeErr, core.ErrTerminationUnconfirmed) {
+		log.Print("Reinício mantendo pendências de containers: ", closeErr)
+		closeErr = nil
+	}
+	if err := errors.Join(closeErr, serverErr); err != nil {
+		return err
+	}
+	if restarting {
+		return errRestart
+	}
+	return nil
 }
 func defaultDataDir() string {
 	base, err := os.UserConfigDir()

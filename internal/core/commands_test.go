@@ -1,8 +1,10 @@
 package core
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -144,5 +146,86 @@ func TestMySQLLocalhostForcesTCP(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(cmd.Args, "\n"), "\n--protocol=TCP\n") {
 		t.Fatal("localhost can fall back to Unix socket")
+	}
+}
+
+func TestBackupSelectionMatchesOnlyLiteralQualifiedNamesAndSchema(t *testing.T) {
+	database := "db.main+$"
+	tables := []string{"plain", "comma,name", "dot.name", "quote`'\"", "a|b[]()+?*", "café名"}
+	filter, err := backupRegex(database, tables, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pattern, err := regexp.Compile(filter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pattern.MatchString(database) {
+		t.Fatal("database schema-create was excluded")
+	}
+	for _, table := range tables {
+		if !pattern.MatchString(database + "." + table) {
+			t.Fatalf("literal table excluded: %q", table)
+		}
+		for _, candidate := range []string{database + "." + table + "_copy", database + "." + table + "\n", "another." + table, "prefix" + database + "." + table} {
+			if pattern.MatchString(candidate) {
+				t.Fatalf("unselected candidate matched: %q", candidate)
+			}
+		}
+	}
+	for _, candidate := range []string{database + "x", database + ".absent", database + "\n", "dbXmain"} {
+		if pattern.MatchString(candidate) {
+			t.Fatalf("unselected candidate matched: %q", candidate)
+		}
+	}
+}
+
+func TestBackupSelectionCombinesIgnoreOnceAndRejectsEmpty(t *testing.T) {
+	base := BackupRequest{Database: "production", DestinationDir: t.TempDir(), Tables: []string{"orders", "orders", "audit"}, IgnoreRegex: "audit"}
+	cmd, _, err := BuildBackup(testProfile(), base, Config{}, "selected")
+	if err != nil {
+		t.Fatal(err)
+	}
+	filters := []string{}
+	for _, arg := range cmd.Args {
+		if strings.HasPrefix(arg, "--regex=") {
+			filters = append(filters, arg)
+		}
+	}
+	if len(filters) != 1 || strings.Count(filters[0], "orders") != 1 || !strings.Contains(filters[0], "(?!.*(audit))") {
+		t.Fatalf("selection not cumulative/deduplicated: %v", filters)
+	}
+	base.Tables = []string{}
+	if _, _, err := BuildBackup(testProfile(), base, Config{}, "empty"); err == nil {
+		t.Fatal("empty selection became full backup")
+	}
+	base.Tables = nil
+	cmd, _, err = BuildBackup(testProfile(), base, Config{}, "all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, arg := range cmd.Args {
+		if arg == "--regex=^(?!.*(audit)).*" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("all-table legacy ignore changed")
+	}
+}
+
+func TestBackupSelectionValidatesNamesAndRegexBudget(t *testing.T) {
+	for _, table := range []string{"", " ", "line\nbreak", "null\x00", strings.Repeat("é", 65)} {
+		if _, err := backupRegex("db", []string{table}, ""); err == nil {
+			t.Fatalf("invalid table accepted %q", table)
+		}
+	}
+	tables := make([]string, 300)
+	for i := range tables {
+		tables[i] = fmt.Sprintf("%04d%s", i, strings.Repeat("x", 60))
+	}
+	if _, err := backupRegex("db", tables, ""); err == nil {
+		t.Fatal("oversized regex accepted")
 	}
 }

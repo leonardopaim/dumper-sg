@@ -96,7 +96,7 @@ func (s *Store) ImportLegacy(ctx context.Context, path string) (ImportResult, er
 	err = s.transaction(ctx, func(tx *sql.Tx) error {
 		ids := map[int64]int64{}
 		secrets := []string{}
-		rows, err := read.QueryContext(ctx, "SELECT "+profileColumns+" FROM profiles ORDER BY id")
+		rows, err := read.QueryContext(ctx, "SELECT "+legacyProfileColumns+", '[]' FROM profiles ORDER BY id")
 		if err != nil {
 			return err
 		}

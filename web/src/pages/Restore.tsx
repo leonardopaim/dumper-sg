@@ -1,6 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { RotateCcw, Database, RefreshCw } from "lucide-react";
+import { TableSelector } from "../components/TableSelector";
+import { PresetPicker } from "../components/PresetPicker";
+import {
+  useRestoreTables,
+  restoreSelectionKey,
+} from "../hooks/useRestoreTables";
 import { api, errorMessage } from "../api";
+import { restoreDraftKey, useOperationDraft } from "../hooks/useOperationDraft";
 import {
   Alert,
   Button,
@@ -12,6 +19,7 @@ import {
   dateTime,
 } from "../components/ui";
 import type { BackupEntry, Job, Profile, RestoreInput } from "../types";
+const transientFields: (keyof RestoreInput)[] = ["overwrite_tables"];
 export function Restore({
   profiles,
   backups,
@@ -27,18 +35,24 @@ export function Restore({
   active: boolean;
   onProfiles: () => void;
 }) {
-  const [form, setForm] = useState<RestoreInput>({
-    profile_id: profiles[0]?.id || 0,
-    backup_dir: "",
-    target_database: "",
-    threads: 0,
-    overwrite_tables: false,
-  });
+  const [form, setForm] = useOperationDraft<RestoreInput>(
+    restoreDraftKey,
+    () => ({
+      profile_id: profiles[0]?.id || 0,
+      backup_dir: "",
+      target_database: "",
+      threads: 0,
+      overwrite_tables: false,
+    }),
+    transientFields,
+  );
+  const backupInput = useRef<HTMLInputElement>(null);
+  const restoreTables = useRestoreTables(form.profile_id, form.backup_dir);
+  const emptySelection = restoreTables.selection?.length === 0;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [confirmation, setConfirmation] = useState(false);
-  const [confirmedName, setConfirmedName] = useState("");
   const profile = profiles.find((item) => item.id === form.profile_id);
   const isolated =
     !!form.target_database.trim() &&
@@ -50,9 +64,16 @@ export function Restore({
       profile.host.trim().toLowerCase(),
     );
   useEffect(() => {
-    if (!profiles.some((item) => item.id === form.profile_id))
-      setForm((data) => ({ ...data, profile_id: profiles[0]?.id || 0 }));
-  }, [profiles]);
+    if (
+      profiles.length &&
+      !profiles.some((item) => item.id === form.profile_id)
+    )
+      setForm((data) => ({
+        ...data,
+        profile_id: profiles[0].id,
+        target_database: "",
+      }));
+  }, [profiles, form.profile_id]);
   const update = <K extends keyof RestoreInput>(
     key: K,
     value: RestoreInput[K],
@@ -64,9 +85,13 @@ export function Restore({
     setBusy(true);
     setError("");
     try {
-      onJob(await api.restore(form));
+      const data = { ...form, tables: restoreTables.references };
+      if (new TextEncoder().encode(JSON.stringify(data)).length > 65536)
+        throw new Error(
+          "A seleção excede o limite de tamanho da requisição. Reduza a lista ou restaure todas as tabelas.",
+        );
+      onJob(await api.restore(data));
       setConfirmation(false);
-      setConfirmedName("");
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -76,10 +101,15 @@ export function Restore({
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     setError("");
-    if (form.overwrite_tables) {
-      setConfirmedName("");
-      setConfirmation(true);
-    } else void restore();
+    if (emptySelection || restoreTables.loading) {
+      setError(
+        emptySelection
+          ? "Selecione ao menos uma tabela ou restaure todas as tabelas."
+          : "Aguarde a consulta dos arquivos do backup.",
+      );
+      return;
+    }
+    if (!active && local && isolated) setConfirmation(true);
   };
   const createDatabase = async () => {
     setBusy(true);
@@ -165,6 +195,7 @@ export function Restore({
               >
                 <input
                   required
+                  ref={backupInput}
                   value={form.backup_dir}
                   onChange={(e) => update("backup_dir", e.target.value)}
                   placeholder="Caminho absoluto no computador"
@@ -249,6 +280,50 @@ export function Restore({
                 onChange={(value) => update("overwrite_tables", value)}
               />
             </section>
+            <TableSelector
+              controller={restoreTables}
+              scope={restoreSelectionKey(form.profile_id, form.backup_dir)}
+              mode="restore"
+              active={false}
+              canQuery={!!form.backup_dir.trim()}
+              missingReason="Informe o diretório do backup acima para consultar os arquivos."
+              onInvalidQuery={() => backupInput.current?.focus()}
+              extra={
+                <>
+                  <PresetPicker
+                    profiles={profiles}
+                    disabled={!restoreTables.tables || restoreTables.loading}
+                    hint={
+                      !restoreTables.tables
+                        ? "Consulte as tabelas do backup antes de aplicar uma seleção de origem."
+                        : "A seleção pode vir de qualquer perfil de origem; o perfil de destino será mantido."
+                    }
+                    onApply={(_source, preset) => {
+                      const names = new Set(preset.tables);
+                      const matches = (restoreTables.tables || []).filter(
+                        (table) =>
+                          table.database === preset.database &&
+                          names.has(table.name),
+                      );
+                      const found = new Set(matches.map((table) => table.name));
+                      const missing = preset.tables.filter(
+                        (name) => !found.has(name),
+                      );
+                      restoreTables.select(matches.map((table) => table.key!));
+                      setNotice(
+                        `Seleção “${preset.name}” aplicada: ${matches.length} de ${preset.tables.length} tabelas.${missing.length ? ` Ausentes no backup: ${missing.slice(0, 5).join(", ")}${missing.length > 5 ? "…" : ""}.` : ""}`,
+                      );
+                    }}
+                  />
+                </>
+              }
+            />
+            {emptySelection && (
+              <Alert>
+                Nenhuma tabela selecionada. Ajuste a seleção das tabelas do
+                backup antes de restaurar.
+              </Alert>
+            )}
             {!local && (
               <Alert>
                 Selecione um perfil com host localhost, 127.0.0.1, ::1 ou
@@ -272,7 +347,13 @@ export function Restore({
               <Button
                 type="submit"
                 busy={busy}
-                disabled={active || !local || !isolated}
+                disabled={
+                  active ||
+                  !local ||
+                  !isolated ||
+                  emptySelection ||
+                  restoreTables.loading
+                }
               >
                 <RotateCcw size={17} />
                 Iniciar restauração
@@ -283,24 +364,70 @@ export function Restore({
       )}
       {confirmation && (
         <Modal
-          title="Confirmar sobrescrita"
+          title="Confirmar restauração"
           onClose={() => {
             if (!busy) setConfirmation(false);
           }}
         >
-          <p>
-            As tabelas existentes em <strong>{form.target_database}</strong>{" "}
-            poderão ser removidas ou substituídas pelos dados do backup.
-          </p>
-          <Field label="Digite o banco de destino para confirmar">
-            <input
-              autoFocus
-              autoComplete="off"
-              value={confirmedName}
-              onChange={(e) => setConfirmedName(e.target.value)}
-              placeholder={form.target_database}
-            />
-          </Field>
+          <p>Confira o destino e as opções antes de iniciar.</p>
+          <dl className="restore-summary">
+            <div>
+              <dt>Perfil</dt>
+              <dd>{profile?.name}</dd>
+            </div>
+            <div>
+              <dt>Servidor</dt>
+              <dd>
+                {profile?.host}:{profile?.port}
+              </dd>
+            </div>
+            <div>
+              <dt>Banco de destino</dt>
+              <dd>{form.target_database}</dd>
+            </div>
+            <div>
+              <dt>Threads efetivas</dt>
+              <dd>{form.threads || profile?.threads || 8}</dd>
+            </div>
+            <div className="full">
+              <dt>Diretório do backup</dt>
+              <dd>
+                <code>{form.backup_dir}</code>
+              </dd>
+            </div>
+            <div className="full">
+              <dt>Tabelas de origem</dt>
+              <dd>
+                {restoreTables.references === null
+                  ? "Todas as tabelas do backup"
+                  : `${restoreTables.references.length} selecionadas`}
+                {restoreTables.references && (
+                  <ul className="confirmation-tables">
+                    {restoreTables.references.slice(0, 8).map((table) => (
+                      <li key={JSON.stringify([table.database, table.name])}>
+                        {table.database} / {table.name}
+                      </li>
+                    ))}
+                    {restoreTables.references.length > 8 && (
+                      <li>
+                        Mais {restoreTables.references.length - 8} tabelas…
+                      </li>
+                    )}
+                  </ul>
+                )}
+              </dd>
+            </div>
+            <div className="full">
+              <dt>Sobrescrever tabelas existentes</dt>
+              <dd>{form.overwrite_tables ? "Sim" : "Não"}</dd>
+            </div>
+          </dl>
+          {form.overwrite_tables && (
+            <Alert>
+              As tabelas existentes no banco de destino poderão ser removidas ou
+              substituídas pelos dados do backup.
+            </Alert>
+          )}
           {error && <Alert>{error}</Alert>}
           <div className="modal-footer">
             <Button
@@ -308,15 +435,21 @@ export function Restore({
               disabled={busy}
               onClick={() => setConfirmation(false)}
             >
-              Voltar
+              Cancelar
             </Button>
             <Button
-              variant="danger"
+              variant={form.overwrite_tables ? "danger" : "primary"}
               busy={busy}
-              disabled={confirmedName !== form.target_database || active}
+              disabled={
+                active ||
+                !local ||
+                !isolated ||
+                emptySelection ||
+                restoreTables.loading
+              }
               onClick={() => void restore()}
             >
-              Sobrescrever e restaurar
+              Confirmar restauração
             </Button>
           </div>
         </Modal>

@@ -29,6 +29,7 @@ func TestLineWriterBoundsOutputAndRedactsSplitWrites(t *testing.T) {
 
 func TestGLibMessagesUseDeclaredSeverityInsteadOfStderr(t *testing.T) {
 	for _, tc := range []struct{ text, stream, expected string }{
+		{"mysql: [Warning] Using a password on the command line interface can be insecure.", "error", "warning"},
 		{"** Message: 03:19:47.055: MyDumper restore version: 1.0.3-1", "error", "info"},
 		{"** Message: 03:19:47.127: Fast index creation will be used for table", "error", "info"},
 		{"** (myloader:1): WARNING **: 03:19:47: Table already exists", "error", "warning"},
@@ -155,6 +156,23 @@ func TestAttachedExitCodeAndRedactedOutput(t *testing.T) {
 	}
 }
 
+func TestStructuredStdoutPreservesNamesAndStillRedactsStderr(t *testing.T) {
+	e, _ := helperExecutor(t, "structured")
+	cmd := helperCommand()
+	cmd.StdoutData = true
+	var data, stderr string
+	err := e.Run(context.Background(), cmd, func(level, line string) {
+		if level == "data" {
+			data = line
+		} else {
+			stderr = line
+		}
+	})
+	if err != nil || data != `{"name":"top-secret_table"}` || !strings.Contains(stderr, "***") || strings.Contains(stderr, "top-secret") {
+		t.Fatalf("structured output=%q stderr=%q err=%v", data, stderr, err)
+	}
+}
+
 // This is a fake Docker CLI subprocess. It only writes under the test's temp
 // directory; no Docker, network, MySQL, backup or restore is invoked.
 func TestDockerHelperProcess(t *testing.T) {
@@ -190,6 +208,11 @@ func TestDockerHelperProcess(t *testing.T) {
 		os.WriteFile(state, []byte(args[2]), 0600)
 		fmt.Println("container-id")
 	case "start":
+		if mode == "structured" {
+			fmt.Println(`{"name":"top-secret_table"}`)
+			fmt.Fprintln(os.Stderr, "warning top-secret")
+			os.Exit(0)
+		}
 		os.WriteFile(filepath.Join(dir, "running"), []byte("ready"), 0600)
 		fmt.Println("output top-secret")
 		if mode == "wait" || mode == "cleanup-fail" {
