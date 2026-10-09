@@ -121,6 +121,9 @@ func BuildBackup(p Profile, req BackupRequest, cfg Config, id string) (Command, 
 	if err := ValidateThreads(req.Threads); err != nil {
 		return Command{}, "", err
 	}
+	if strings.EqualFold(strings.TrimSuffix(strings.TrimSpace(p.Host), "."), "db.sommusgestor.com") && req.Threads > 2 {
+		return Command{}, "", fmt.Errorf("backup em db.sommusgestor.com permite no máximo 2 threads por segurança. Cada thread aumenta o número de conexões no banco de dados de produção")
+	}
 	if req.DestinationDir == "" {
 		req.DestinationDir = cfg.BackupDir
 	}

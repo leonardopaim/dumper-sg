@@ -25,6 +25,8 @@ wsl.exe --distribution Ubuntu --exec docker pull mysql:8.4.3
 
 Abra **http://127.0.0.1:8787**. O executável em `dist/dumpersg.exe` inclui os arquivos do frontend; Node.js e Go não são necessários para rodar esse executável já compilado. Docker continua necessário para as operações de banco. Ctrl+C encerra o serviço e cancela o job ativo, aguardando a confirmação de limpeza do container por até 90 segundos. Baixe as imagens Docker previamente para evitar timeout na primeira operação.
 
+No Windows, o ícone do DumperSG aparece na bandeja junto ao relógio, inclusive ao iniciar em segundo plano. Clique para abrir a interface, ou use o botão direito para **Abrir DumperSG** e **Encerrar DumperSG**. O encerramento pela bandeja é bloqueado enquanto houver operação ativa ou cancelamento em andamento; o Windows mostra um aviso e mantém a aplicação aberta. Fechar o navegador mantém o backend em execução. O ícone pode ficar na seta de ícones ocultos. Para execução sem bandeja, passe `-no-tray` diretamente ao executável.
+
 Dados padrão: `%APPDATA%\DumperSG\web` com `dumper_sg.sqlite3`, `backups` e `logs`. Para escolher outro diretório:
 
 ```powershell
@@ -73,13 +75,21 @@ Não utilize o mesmo arquivo SQLite como banco simultâneo das duas versões. O 
 
 ## Limites operacionais
 
+Backups no host `db.sommusgestor.com` aceitam no máximo 2 threads efetivas, inclusive quando herdadas do perfil. Valores maiores são bloqueados na interface e no core: cada thread aumenta o número de conexões no banco de dados de produção. As opções avançadas do backup mostram as threads efetivas e permitem corrigir o valor.
+
 Um job de banco por vez evita conflitos locais. Se a limpeza de um container não puder ser confirmada, novas operações ficam bloqueadas até a verificação de término; o bloqueio também sobrevive ao reinício do serviço. Progresso intermediário é estimado; sucesso depende do término da ferramenta. O modo sem bloqueio mantém as limitações do legado: DDL concorrente ou tabelas não transacionais podem comprometer a consistência do backup.
 
 As senhas continuam armazenadas localmente no SQLite, como no desktop; elas não são retornadas pela API nem gravadas nos eventos de jobs. Proteja o diretório de dados com as permissões do Windows. Logs têm retenção limitada em memória e arquivos por job. As versões de imagem podem ser configuradas por `-docker-image` e `-mysql-image`; confirme o suporte às opções no ambiente de destino.
 
+## Interface e acompanhamento
+
+Backup e restauração usam formulários centrais com opções avançadas recolhidas. A origem da restauração alterna entre backup salvo e pasta manual. Perfis são apresentados em lista; ações secundárias ficam em Mais ações. Configurações concentra aparência, armazenamento e manutenção (Docker, reinício e importação do legado).
+
+Ao disparar uma ação, o acompanhamento abre já na preparação. Falhas anteriores à criação de um job também aparecem no modal. Durante a execução, ele mostra etapa atual, progresso estimado, tempo e últimos acontecimentos. Os logs completos podem ser expandidos. Minimizar ou fechar a janela não cancela o processamento; use Ver operação no topo para reabri-la. Ao finalizar, a janela mostra sucesso, alertas, resultado parcial, erro ou cancelamento e permanece aberta até ser fechada. Histórico abre o mesmo modal. Resultado parcial significa que a consulta de bancos não conseguiu obter parte das informações opcionais de grupos/empresas; seleção intencional de tabelas continua sendo uma execução normal.
+
 ## Selecionar tabelas e confirmar restauração
 
-Em Criar backup, abra o módulo de tabelas e carregue a lista do perfil/banco de origem. Os objetos aparecem do maior para o menor, com busca e seleção em lote. O modo padrão inclui todas as tabelas sem precisar consultar a lista; no modo personalizado, selecione pelo menos uma. Preencha o banco de origem no formulário ou no perfil antes de consultar; o botão informa e foca o campo quando ele está vazio. A escolha é lembrada separadamente por perfil e banco. A consulta usa o Docker configurado e não pode executar junto de outro job.
+Em Criar backup, abra o módulo de tabelas e carregue a lista do perfil/banco de origem. Os objetos aparecem do maior para o menor, com busca e seleção em lote. O modo padrão inclui todas as tabelas sem precisar consultar a lista. Ao escolher **Seleção personalizada** antes da primeira consulta, o catálogo carrega com todas marcadas. A caixa no cabeçalho **Tabela** marca ou desmarca o catálogo inteiro, inclusive tabelas ocultas pela busca, e indica quando a seleção é parcial. Seleções salvas ou alteradas não são substituídas ao atualizar o catálogo; no modo personalizado, selecione pelo menos uma. Preencha o banco de origem no formulário ou no perfil antes de consultar; o botão informa e foca o campo quando ele está vazio. A escolha é lembrada separadamente por perfil e banco. A consulta usa o Docker configurado e não pode executar junto de outro job.
 
 O tamanho é uma estimativa de dados e índices informada pelo MySQL, não o tamanho final dos arquivos comprimidos. Views também aparecem na lista. Tabelas relacionadas não são incluídas automaticamente e a regex de exclusão continua valendo sobre os objetos selecionados. Ao atualizar o catálogo, revise objetos adicionados/removidos.
 
@@ -128,3 +138,11 @@ Em **Configurações → Aparência**, escolha o tema **Claro** ou **Escuro**. A
 Os perfis cadastrados e o diretório padrão são persistidos no SQLite da aplicação. Os formulários de backup e restauração lembram separadamente o último perfil e os valores preenchidos no navegador, incluindo pasta, banco e threads. A seleção é recuperada por ID mesmo se a lista de perfis mudar de ordem; se o perfil for removido, um perfil disponível é selecionado e o destino de restauração é limpo. A opção de sobrescrever tabelas não é memorizada.
 
 Esses campos são salvos automaticamente, sem credenciais, no armazenamento do navegador para a origem usada. localhost, 127.0.0.1 e as portas 8787/8788 têm armazenamentos independentes. Use o mesmo endereço ao voltar; limpar os dados do site também remove essas preferências. Se o navegador bloquear o armazenamento, os formulários continuam funcionando com seus valores padrão.
+
+## Bancos disponíveis e nomes dos grupos
+
+Em **Bancos disponíveis**, escolha o perfil de conexão e clique em **Carregar bancos**. Pesquise pelo nome do grupo, razão social, nome fantasia, ID do grupo ou database; a busca ignora maiúsculas, acentos e espaços extras. O modo **Automática** encontra nomes por palavras e trata IDs e databases completos como valores exatos: `sommusgestor_1` não inclui `sommusgestor_10`. Escolha **Igual (exata)** para comparar o nome completo ou **Contém (parcial)** para procurar trechos, inclusive prefixos de databases. **Preparar backup** abre o formulário com o perfil, database e SSL correspondentes, preservando as demais opções preenchidas. A exportação começa somente ao clicar em **Iniciar backup**. O formulário também oferece um acesso direto à lista.
+
+A lista mostra os databases visíveis para o usuário do perfil, exceto os quatro schemas de sistema do MySQL. Quando há bancos `sommusgestor_<id>`, consulta os nomes em `sommusgestor.grupo_empresa` usando grupos ativos da instância 1. Consulta também `sommusgestor.empresa` para associar razão social e nome fantasia pelo `grupo_empresa_id`, excluindo registros marcados como excluídos e restringindo os grupos à instância 1. Empresas não excluídas são incluídas mesmo quando `ativo = 0`, pois continuam pertencendo ao banco do grupo. Selecionar pelo nome de uma empresa prepara o backup do banco inteiro do grupo; não restringe os dados a essa empresa. A leitura não usa os dados de conexão de `instancia_banco_dados`. Grupos sem database visível não são oferecidos; databases sem grupo correspondente continuam disponíveis pelo nome técnico. Se grupos ou empresas não puderem ser consultados, um aviso explica a ausência; a lista de bancos e os metadados que puderam ser obtidos continuam disponíveis.
+
+As consultas usam o Docker configurado e o mesmo controle de execução das outras operações. Trocar de perfil ou sair da tela cancela a consulta dessa tela e descarta resultados antigos. **Atualizar bancos** refaz a consulta; o catálogo não é persistido. O limite de 10.000 bancos é explícito e não retorna uma lista truncada. As consultas opcionais de grupos e empresas têm limite de 10.000 registros cada; erros ou excesso descartam os dados dessa consulta e exibem aviso.

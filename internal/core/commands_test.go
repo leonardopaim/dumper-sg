@@ -229,3 +229,34 @@ func TestBackupSelectionValidatesNamesAndRegexBudget(t *testing.T) {
 		t.Fatal("oversized regex accepted")
 	}
 }
+
+func TestProductionBackupThreadLimit(t *testing.T) {
+	dir := t.TempDir()
+	for _, tc := range []struct {
+		name, host                string
+		profileThreads, requested int
+		blocked                   bool
+	}{
+		{"two", "db.sommusgestor.com", 8, 2, false},
+		{"one", "db.sommusgestor.com", 8, 1, false},
+		{"explicit excess", "db.sommusgestor.com", 2, 3, true},
+		{"inherited excess", "db.sommusgestor.com", 8, 0, true},
+		{"safe inherited", "db.sommusgestor.com", 2, 0, false},
+		{"normalized host", " DB.SOMMUSGESTOR.COM. ", 8, 3, true},
+		{"other host", "another.example", 8, 8, false},
+		{"lookalike", "db.sommusgestor.com.other", 8, 8, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := testProfile()
+			p.Host, p.Threads = tc.host, tc.profileThreads
+			cmd, _, err := BuildBackup(p, BackupRequest{Database: "production", DestinationDir: dir, Threads: tc.requested}, Config{}, "safe")
+			if tc.blocked {
+				if err == nil || !strings.Contains(err.Error(), "Cada thread aumenta") || len(cmd.Args) != 0 {
+					t.Fatalf("unsafe backup allowed or missing alert: %v", err)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}

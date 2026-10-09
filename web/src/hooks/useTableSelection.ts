@@ -1,3 +1,4 @@
+import { useOperationRequest } from "../components/OperationFeedback";
 import { useEffect, useRef, useState } from "react";
 import { api, errorMessage, tableLimit } from "../api";
 import type { Job, TableInfo, TableQuery } from "../types";
@@ -28,6 +29,7 @@ export function useTableSelection(
   query: TableQuery,
   onJob: (job: Job) => void,
 ) {
+  const runOperation = useOperationRequest();
   const scope = tableSelectionKey(query.profile_id, query.database);
   const context = `${scope}:${query.ssl}`;
   const currentContext = useRef(context);
@@ -103,13 +105,18 @@ export function useTableSelection(
     setPending(context);
     setFailure(undefined);
     try {
-      const result = await api.tables(query, {
-        signal: controller.signal,
-        onJob: (job) => {
-          if (!controller.signal.aborted && currentContext.current === context)
-            onJob(job);
-        },
-      });
+      const result = await runOperation("table_list", () =>
+        api.tables(query, {
+          signal: controller.signal,
+          onJob: (job) => {
+            if (
+              !controller.signal.aborted &&
+              currentContext.current === context
+            )
+              onJob(job);
+          },
+        }),
+      );
       if (
         !controller.signal.aborted &&
         currentContext.current === context &&

@@ -1,5 +1,6 @@
+import { useOperationRequest } from "../components/OperationFeedback";
 import { useEffect, useRef, useState } from "react";
-import { Archive, ArrowRight, SlidersHorizontal } from "lucide-react";
+import { Archive, ArrowRight } from "lucide-react";
 import { api, errorMessage } from "../api";
 import {
   useTableSelection,
@@ -16,19 +17,31 @@ import {
   PageHeader,
   Toggle,
 } from "../components/ui";
-import type { BackupInput, Job, Profile, Settings } from "../types";
+import type {
+  BackupInput,
+  BackupSource,
+  Job,
+  Profile,
+  Settings,
+} from "../types";
 export function Backup({
   profiles,
   settings,
   active,
   onJob,
   onProfiles,
+  initialSource,
+  onSourceApplied,
+  onBrowseDatabases,
 }: {
   profiles: Profile[];
   settings: Settings;
   active: boolean;
   onJob: (job: Job) => void;
   onProfiles: () => void;
+  initialSource?: BackupSource;
+  onSourceApplied?: () => void;
+  onBrowseDatabases?: () => void;
 }) {
   const [form, setForm] = useOperationDraft<BackupInput>(
     backupDraftKey,
@@ -43,6 +56,7 @@ export function Backup({
       ignore_regex: "",
     }),
   );
+  const runOperation = useOperationRequest();
   const databaseInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -52,6 +66,17 @@ export function Backup({
   );
   const emptySelection = tableSelection.selection?.length === 0;
   const profile = profiles.find((item) => item.id === form.profile_id);
+  const production =
+    profile?.host.trim().toLowerCase().replace(/\.$/, "") ===
+    "db.sommusgestor.com";
+  const effectiveThreads = form.threads || profile?.threads || 8;
+  const unsafeThreads = production && effectiveThreads > 2;
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  useEffect(() => {
+    if (unsafeThreads) setAdvancedOpen(true);
+  }, [unsafeThreads]);
+  const threadsAlert =
+    "Backup em db.sommusgestor.com permite no máximo 2 threads por segurança. Cada thread aumenta o número de conexões no banco de dados de produção.";
   const selectProfile = (id: number) => {
     const selected = profiles.find((item) => item.id === id);
     setForm((data) => ({
@@ -62,6 +87,18 @@ export function Backup({
     }));
   };
   useEffect(() => {
+    const sourceProfile =
+      initialSource &&
+      profiles.find((item) => item.id === initialSource.profile_id);
+    if (initialSource && sourceProfile) {
+      setForm((data) => ({
+        ...data,
+        ...initialSource,
+        ssl: sourceProfile.ssl,
+      }));
+      onSourceApplied?.();
+      return;
+    }
     if (
       profiles.length &&
       !profiles.some((item) => item.id === form.profile_id)
@@ -72,12 +109,16 @@ export function Backup({
       if (!form.database.trim() && current?.database)
         setForm((data) => ({ ...data, database: current.database }));
     }
-  }, [profiles, form.profile_id, profile?.database]);
+  }, [profiles, form.profile_id, profile?.database, initialSource]);
   const update = <K extends keyof BackupInput>(key: K, value: BackupInput[K]) =>
     setForm((data) => ({ ...data, [key]: value }));
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError("");
+    if (unsafeThreads) {
+      setError(threadsAlert);
+      return;
+    }
     if (emptySelection || tableSelection.loading || active) {
       setError(
         emptySelection
@@ -93,7 +134,7 @@ export function Backup({
         throw new Error(
           "A seleção excede o limite de tamanho da requisição. Reduza a lista ou use todas as tabelas no modo automático.",
         );
-      onJob(await api.backup(data));
+      onJob(await runOperation("backup", () => api.backup(data)));
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -105,7 +146,7 @@ export function Backup({
       <PageHeader
         eyebrow="PROTEÇÃO DE DADOS"
         title="Criar backup"
-        description="Exporte seu banco com mydumper e acompanhe cada etapa em tempo real."
+        description="Escolha a origem e onde salvar o backup."
       />
       {profiles.length === 0 ? (
         <Empty title="Nenhum perfil de conexão">
@@ -116,11 +157,19 @@ export function Backup({
           <div className="card form-card operation-card">
             <section className="operation-section">
               <div className="card-heading">
-                <span className="step">01</span>
                 <div>
                   <h2>Origem e destino</h2>
-                  <p>Selecione o banco e onde guardar os arquivos.</p>
                 </div>
+                {onBrowseDatabases && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="browse-databases"
+                    onClick={onBrowseDatabases}
+                  >
+                    Buscar banco
+                  </Button>
+                )}
               </div>
               <div className="form-grid">
                 <Field label="Perfil de conexão" className="full">
@@ -137,7 +186,6 @@ export function Backup({
                 </Field>
                 <Field
                   label="Banco de origem"
-                  className="full"
                   hint={
                     !form.database.trim()
                       ? "Informe o nome do banco aqui para habilitar a consulta de tabelas."
@@ -155,7 +203,6 @@ export function Backup({
                 </Field>
                 <Field
                   label="Diretório de destino"
-                  className="full"
                   hint={
                     settings.default_backup_dir
                       ? `Vazio usa o padrão: ${settings.default_backup_dir}`
@@ -173,15 +220,23 @@ export function Backup({
                 </Field>
               </div>
             </section>
-            <section className="operation-section">
-              <div className="card-heading section-heading">
-                <span className="step">02</span>
-                <div>
-                  <h2>Opções de exportação</h2>
-                  <p>Ajuste o processamento para este backup.</p>
-                </div>
-                <SlidersHorizontal size={18} />
-              </div>
+            {unsafeThreads && (
+              <Alert warning>
+                {threadsAlert} Threads efetivas: {effectiveThreads}.
+              </Alert>
+            )}
+            <details
+              className="advanced-options"
+              open={advancedOpen}
+              onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
+            >
+              <summary>
+                Opções avançadas{" "}
+                <small>
+                  {effectiveThreads} threads ·{" "}
+                  {form.compress ? "Comprimido" : "Sem compressão"}
+                </small>
+              </summary>
               <div className="form-grid">
                 <Field
                   label="Threads"
@@ -227,7 +282,7 @@ export function Backup({
                   onChange={(value) => update("non_locking", value)}
                 />
               </div>
-            </section>
+            </details>
 
             <TableSelector
               controller={tableSelection}
@@ -268,14 +323,15 @@ export function Backup({
             )}
             {error && <Alert>{error}</Alert>}
             <div className="form-footer">
-              <span>
-                {active
-                  ? "Aguarde a operação em andamento."
-                  : "O backup continua ao navegar entre telas."}
-              </span>
+              {active && <span>Aguarde a operação em andamento.</span>}
               <Button
                 type="submit"
-                disabled={active || tableSelection.loading || emptySelection}
+                disabled={
+                  active ||
+                  tableSelection.loading ||
+                  emptySelection ||
+                  unsafeThreads
+                }
                 busy={busy}
               >
                 <Archive size={17} />

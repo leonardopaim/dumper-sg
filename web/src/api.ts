@@ -10,6 +10,7 @@ import type {
   RestoreInput,
   TableInfo,
   TableQuery,
+  DatabaseCatalog,
   BackupTableInfo,
   ApplicationStatus,
 } from "./types";
@@ -116,6 +117,11 @@ export const api = {
     request<void>(`/backups/${encodeURIComponent(id)}`, "DELETE"),
   openBackup: (id: string) =>
     request<void>(`/backups/${encodeURIComponent(id)}/open`, "POST"),
+  startDatabaseList: (profile_id: number) =>
+    request<Job>("/databases/catalog", "POST", { profile_id }),
+  databaseResult: (id: string, signal?: AbortSignal) =>
+    request<DatabaseCatalog>(`/jobs/${id}/databases`, "GET", undefined, signal),
+  databases: queryDatabases,
   settings: () => request<Settings>("/settings"),
   saveSettings: (data: Settings) =>
     request<Settings>("/settings", "PATCH", data),
@@ -135,6 +141,7 @@ export function errorMessage(error: unknown): string {
 }
 
 export const tableLimit = 10000;
+export const databaseLimit = 10000;
 export const tableQueryTimeoutMs = 120000;
 interface TableQueryOptions {
   signal?: AbortSignal;
@@ -151,10 +158,12 @@ function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
       .finally(() => signal.removeEventListener("abort", abort));
   });
 }
-async function queryTables(
-  data: TableQuery,
+async function queryCatalog<T>(
+  start: () => Promise<Job>,
+  load: (id: string, signal: AbortSignal) => Promise<T>,
+  subject: string,
   options: TableQueryOptions = {},
-): Promise<TableInfo[]> {
+): Promise<T> {
   const controller = new AbortController();
   const externalAbort = () => controller.abort();
   options.signal?.addEventListener("abort", externalAbort, { once: true });
@@ -180,7 +189,7 @@ async function queryTables(
   try {
     controller.signal.throwIfAborted();
     // Keep the creation response observable so a late response can cancel this job only.
-    const creation = api.startTableList(data).then((job) => {
+    const creation = start().then((job) => {
       created = job;
       if (controller.signal.aborted) cancelOwnJob();
       return job;
@@ -199,37 +208,15 @@ async function queryTables(
     }
     if (created.status !== "succeeded")
       throw new Error(
-        created.message || "Não foi possível consultar as tabelas.",
+        created.message || `Não foi possível consultar ${subject}.`,
       );
     complete = true;
     options.onJob?.(created);
-    const tables = await api.tableResult(created.id, controller.signal);
-    if (!Array.isArray(tables) || tables.length > tableLimit)
-      throw new Error(
-        `O catálogo excede o limite de ${tableLimit.toLocaleString("pt-BR")} tabelas. Use todas as tabelas ou consulte um banco menor.`,
-      );
-    if (
-      tables.some(
-        (table) =>
-          typeof table.name !== "string" ||
-          !table.name ||
-          table.name.length > 256 ||
-          !Number.isFinite(table.size_bytes) ||
-          table.size_bytes < 0 ||
-          !Number.isFinite(table.rows) ||
-          table.rows < 0 ||
-          typeof table.table_type !== "string",
-      )
-    )
-      throw new Error("A consulta retornou um catálogo de tabelas inválido.");
-    return tables.sort(
-      (a, b) =>
-        b.size_bytes - a.size_bytes || a.name.localeCompare(b.name, "pt-BR"),
-    );
+    return await load(created.id, controller.signal);
   } catch (error) {
     if (timedOut)
       throw new Error(
-        "A consulta de tabelas excedeu 2 minutos. Verifique a conexão e tente novamente.",
+        `A consulta de ${subject} excedeu 2 minutos. Verifique a conexão e tente novamente.`,
       );
     throw error;
   } finally {
@@ -237,4 +224,106 @@ async function queryTables(
     options.signal?.removeEventListener("abort", externalAbort);
     if (!complete) cancelOwnJob();
   }
+}
+
+async function queryTables(
+  data: TableQuery,
+  options: TableQueryOptions = {},
+): Promise<TableInfo[]> {
+  return queryCatalog(
+    () => api.startTableList(data),
+    async (id, signal) => {
+      const tables = await api.tableResult(id, signal);
+      if (!Array.isArray(tables) || tables.length > tableLimit)
+        throw new Error(
+          `O catálogo excede o limite de ${tableLimit.toLocaleString("pt-BR")} tabelas. Use todas as tabelas ou consulte um banco menor.`,
+        );
+      if (
+        tables.some(
+          (table) =>
+            typeof table.name !== "string" ||
+            !table.name ||
+            table.name.length > 256 ||
+            !Number.isFinite(table.size_bytes) ||
+            table.size_bytes < 0 ||
+            !Number.isFinite(table.rows) ||
+            table.rows < 0 ||
+            typeof table.table_type !== "string",
+        )
+      )
+        throw new Error("A consulta retornou um catálogo de tabelas inválido.");
+      return tables.sort(
+        (a, b) =>
+          b.size_bytes - a.size_bytes || a.name.localeCompare(b.name, "pt-BR"),
+      );
+    },
+    "tabelas",
+    options,
+  );
+}
+
+async function queryDatabases(
+  profileId: number,
+  options: TableQueryOptions = {},
+): Promise<DatabaseCatalog> {
+  return queryCatalog(
+    () => api.startDatabaseList(profileId),
+    async (id, signal) => {
+      const result = await api.databaseResult(id, signal);
+      if (
+        !result ||
+        !Array.isArray(result.databases) ||
+        result.databases.length > databaseLimit ||
+        (result.warning !== undefined && typeof result.warning !== "string")
+      )
+        throw new Error("A consulta retornou um catálogo de bancos inválido.");
+      const names = new Set<string>();
+      const companyIds = new Set<number>();
+      for (const row of result.databases) {
+        if (
+          !row ||
+          typeof row.name !== "string" ||
+          !row.name ||
+          row.name.length > 256 ||
+          /[\x00-\x1f\x7f]/.test(row.name) ||
+          names.has(row.name) ||
+          (row.group_name !== undefined &&
+            (typeof row.group_name !== "string" ||
+              row.group_name.length > 100)) ||
+          (row.group_id !== undefined &&
+            (!Number.isSafeInteger(row.group_id) || row.group_id <= 0))
+        )
+          throw new Error(
+            "A consulta retornou um catálogo de bancos inválido.",
+          );
+        names.add(row.name);
+        if (row.companies !== undefined && !Array.isArray(row.companies))
+          throw new Error(
+            "A consulta retornou um catálogo de bancos inválido.",
+          );
+        for (const company of row.companies || []) {
+          if (
+            !company ||
+            !Number.isSafeInteger(company.company_id) ||
+            company.company_id <= 0 ||
+            companyIds.has(company.company_id) ||
+            company.group_id !== row.group_id ||
+            typeof company.legal_name !== "string" ||
+            !company.legal_name.trim() ||
+            Array.from(company.legal_name).length > 150 ||
+            typeof company.trade_name !== "string" ||
+            Array.from(company.trade_name).length > 150 ||
+            companyIds.size >= databaseLimit
+          )
+            throw new Error(
+              "A consulta retornou um catálogo de bancos inválido.",
+            );
+          companyIds.add(company.company_id);
+        }
+      }
+      return result;
+    },
+    "bancos",
+    options,
+  );
 }

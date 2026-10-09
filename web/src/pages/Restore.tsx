@@ -1,3 +1,4 @@
+import { useOperationRequest } from "../components/OperationFeedback";
 import { useEffect, useRef, useState } from "react";
 import { RotateCcw, Database, RefreshCw } from "lucide-react";
 import { TableSelector } from "../components/TableSelector";
@@ -50,9 +51,21 @@ export function Restore({
     }),
     transientFields,
   );
+  const [sourceMode, setSourceMode] = useState<"catalog" | "manual">(() =>
+    backups.length &&
+    (!form.backup_dir || backups.some((item) => item.path === form.backup_dir))
+      ? "catalog"
+      : "manual",
+  );
+  const runOperation = useOperationRequest();
   const backupInput = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (initialBackup) {
+      setSourceMode(
+        backups.some((item) => item.path === initialBackup)
+          ? "catalog"
+          : "manual",
+      );
       setForm((data) => ({
         ...data,
         backup_dir: initialBackup,
@@ -98,13 +111,14 @@ export function Restore({
   const restore = async () => {
     setBusy(true);
     setError("");
+    setConfirmation(false);
     try {
       const data = { ...form, tables: restoreTables.references };
       if (new TextEncoder().encode(JSON.stringify(data)).length > 65536)
         throw new Error(
           "A seleção excede o limite de tamanho da requisição. Reduza a lista ou restaure todas as tabelas.",
         );
-      onJob(await api.restore(data));
+      onJob(await runOperation("restore", () => api.restore(data)));
       setConfirmation(false);
     } catch (e) {
       setError(errorMessage(e));
@@ -129,10 +143,12 @@ export function Restore({
     setBusy(true);
     setError("");
     try {
-      onJob(await api.createDatabase(form.profile_id, form.target_database));
-      setNotice(
-        "Criação do banco iniciada. Acompanhe o resultado nos eventos.",
+      onJob(
+        await runOperation("create_database", () =>
+          api.createDatabase(form.profile_id, form.target_database),
+        ),
       );
+      setNotice("Criação do banco iniciada.");
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -155,7 +171,7 @@ export function Restore({
       <PageHeader
         eyebrow="RECUPERAÇÃO"
         title="Restaurar backup"
-        description="Carregue os dados em um banco local isolado, diferente do banco padrão do perfil."
+        description="Escolha o backup e um banco local de destino."
         action={
           <Button
             variant="secondary"
@@ -176,57 +192,78 @@ export function Restore({
           <div className="card form-card operation-card">
             <section className="operation-section">
               <div className="card-heading">
-                <span className="step">01</span>
                 <div>
                   <h2>Backup de origem</h2>
-                  <p>Use o catálogo ou informe uma pasta local.</p>
                 </div>
               </div>
-              <Field
-                label="Backup do catálogo"
-                hint="Inclui destinos personalizados registrados no histórico. Gerencie arquivos em Meus backups."
+              <div
+                className="source-mode"
+                role="group"
+                aria-label="Origem do backup"
               >
-                <select
-                  value={
-                    backups.some((item) => item.path === form.backup_dir)
-                      ? form.backup_dir
-                      : ""
-                  }
-                  onChange={(e) => update("backup_dir", e.target.value)}
+                {(["catalog", "manual"] as const).map((mode) => (
+                  <label key={mode}>
+                    <input
+                      type="radio"
+                      name="backup-source"
+                      checked={sourceMode === mode}
+                      onChange={() => {
+                        setSourceMode(mode);
+                        update("backup_dir", "");
+                      }}
+                    />
+                    {mode === "catalog" ? "Backup salvo" : "Pasta manual"}
+                  </label>
+                ))}
+              </div>
+              {sourceMode === "catalog" ? (
+                <Field
+                  label="Backup do catálogo"
+                  hint="Inclui destinos personalizados registrados no histórico. Gerencie arquivos em Meus backups."
                 >
-                  <option value="">
-                    {backups.length
-                      ? "Selecionar um backup…"
-                      : "Nenhum backup encontrado no catálogo"}
-                  </option>
-                  {backups.map((item) => (
-                    <option
-                      key={item.path}
-                      value={item.path}
-                      disabled={item.complete === false}
-                    >
-                      {item.name} · {dateTime(item.modified_at)}
-                      {item.complete === false ? " · Incompleto" : ""}
+                  <select
+                    required
+                    value={
+                      backups.some((item) => item.path === form.backup_dir)
+                        ? form.backup_dir
+                        : ""
+                    }
+                    onChange={(e) => update("backup_dir", e.target.value)}
+                  >
+                    <option value="">
+                      {backups.length
+                        ? "Selecionar um backup…"
+                        : "Nenhum backup encontrado no catálogo"}
                     </option>
-                  ))}
-                </select>
-              </Field>
-              <Field
-                label="Diretório do backup"
-                hint="Caminho absoluto da pasta que contém os arquivos e metadata."
-              >
-                <input
-                  required
-                  ref={backupInput}
-                  value={form.backup_dir}
-                  onChange={(e) => update("backup_dir", e.target.value)}
-                  placeholder="Caminho absoluto no computador"
-                />
-              </Field>
+                    {backups.map((item) => (
+                      <option
+                        key={item.path}
+                        value={item.path}
+                        disabled={item.complete === false}
+                      >
+                        {item.name} · {dateTime(item.modified_at)}
+                        {item.complete === false ? " · Incompleto" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              ) : (
+                <Field
+                  label="Diretório do backup"
+                  hint="Caminho absoluto da pasta que contém os arquivos e metadata."
+                >
+                  <input
+                    required
+                    ref={backupInput}
+                    value={form.backup_dir}
+                    onChange={(e) => update("backup_dir", e.target.value)}
+                    placeholder="Caminho absoluto no computador"
+                  />
+                </Field>
+              )}
             </section>
             <section className="operation-section">
               <div className="card-heading section-heading">
-                <span className="step">02</span>
                 <div>
                   <h2>Banco de destino</h2>
                   <p>A restauração é permitida apenas em conexão local.</p>
@@ -263,19 +300,6 @@ export function Restore({
                     placeholder="meu_banco_restaurado"
                   />
                 </Field>
-                <Field
-                  label="Threads"
-                  hint={`0 usa o perfil (${profile?.threads || 8} threads).`}
-                >
-                  <input
-                    type="number"
-                    min={0}
-                    max={128}
-                    required
-                    value={form.threads}
-                    onChange={(e) => update("threads", Number(e.target.value))}
-                  />
-                </Field>
               </div>
               <div className="create-database">
                 <span>O banco ainda não existe?</span>
@@ -302,6 +326,27 @@ export function Restore({
                 onChange={(value) => update("overwrite_tables", value)}
               />
             </section>
+            <details className="advanced-options">
+              <summary>
+                Opções avançadas{" "}
+                <small>{form.threads || profile?.threads || 8} threads</small>
+              </summary>
+              <div className="form-grid">
+                <Field
+                  label="Threads"
+                  hint={`0 usa o perfil (${profile?.threads || 8} threads).`}
+                >
+                  <input
+                    type="number"
+                    min={0}
+                    max={128}
+                    required
+                    value={form.threads}
+                    onChange={(e) => update("threads", Number(e.target.value))}
+                  />
+                </Field>{" "}
+              </div>
+            </details>
             <TableSelector
               controller={restoreTables}
               scope={restoreSelectionKey(form.profile_id, form.backup_dir)}

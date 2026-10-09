@@ -103,7 +103,7 @@ export function Backups({
       <PageHeader
         eyebrow="ARQUIVOS LOCAIS"
         title="Meus backups"
-        description="Consulte os arquivos, abra a pasta ou libere espaço excluindo backups que não precisa mais."
+        description="Encontre, restaure e gerencie seus backups."
         action={
           <Button
             variant="secondary"
@@ -160,7 +160,7 @@ export function Backups({
               </caption>
               <thead>
                 <tr>
-                  <th scope="col">Backup / pasta</th>
+                  <th scope="col">Backup</th>
                   <th scope="col">Modificado em</th>
                   <th scope="col">Tamanho</th>
                   <th scope="col">Estado</th>
@@ -174,17 +174,11 @@ export function Backups({
                       <strong className="backup-name" title={item.name}>
                         {item.name}
                       </strong>
-                      <small className="table-path" title={item.path}>
-                        {item.path}
-                      </small>
                     </td>
                     <td className="nowrap">{dateTime(item.modified_at)}</td>
                     <td className="nowrap">
                       {item.problem ? "≈ " : ""}
                       {sizeLabel(item.size_bytes || 0)}
-                      <small className="table-path">
-                        {item.file_count ?? "—"} arquivos
-                      </small>
                     </td>
                     <td>
                       <span
@@ -211,6 +205,16 @@ export function Backups({
                         <button
                           className="icon-button"
                           type="button"
+                          title="Restaurar"
+                          aria-label={`Restaurar ${item.name}`}
+                          disabled={!item.complete || active}
+                          onClick={() => onRestore(item.path)}
+                        >
+                          <RotateCcw size={17} />
+                        </button>
+                        <button
+                          className="icon-button"
+                          type="button"
                           title="Abrir pasta"
                           aria-label={`Abrir pasta de ${item.name}`}
                           disabled={busy || !item.id}
@@ -219,16 +223,6 @@ export function Backups({
                           }
                         >
                           <FolderOpen size={17} />
-                        </button>
-                        <button
-                          className="icon-button"
-                          type="button"
-                          title="Restaurar"
-                          aria-label={`Restaurar ${item.name}`}
-                          disabled={!item.complete || active}
-                          onClick={() => onRestore(item.path)}
-                        >
-                          <RotateCcw size={17} />
                         </button>
                         <button
                           className="icon-button danger-icon"

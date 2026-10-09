@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, ListFilter, RefreshCw } from "lucide-react";
 import { Alert, Button, Empty, Field } from "./ui";
 import type { ReactNode } from "react";
@@ -54,6 +54,8 @@ export function TableSelector({
   const [expanded, setExpanded] = useState(initialExpanded);
   const panelId = useId();
   const [search, setSearch] = useState("");
+  const [customScope, setCustomScope] = useState<string>();
+  const allCheckbox = useRef<HTMLInputElement>(null);
   const { selection, tables, loading, error, select, load, cancel } =
     controller;
   useEffect(() => setSearch(""), [scope]);
@@ -74,6 +76,21 @@ export function TableSelector({
       (table) => selectedNames === null || selectedNames.has(identity(table)),
     ) || [];
   const total = chosen.reduce((sum, table) => sum + table.size_bytes, 0);
+  const customMode = selection !== null || customScope === scope;
+  const allChecked = !!tables?.length && chosen.length === tables.length;
+  useEffect(() => {
+    if (allCheckbox.current)
+      allCheckbox.current.indeterminate = chosen.length > 0 && !allChecked;
+  }, [chosen.length, allChecked, expanded]);
+  useEffect(() => {
+    if (customScope === undefined) return;
+    if (customScope !== scope || selection !== null) {
+      setCustomScope(undefined);
+    } else if (tables !== null) {
+      setCustomScope(undefined);
+      select(tables.map(identity));
+    }
+  }, [customScope, scope, selection, tables, select]);
   const missing =
     tables && selection
       ? selection.filter((name) => !catalogNames.has(name))
@@ -116,8 +133,11 @@ export function TableSelector({
               <input
                 type="radio"
                 name={`table-mode-${panelId}`}
-                checked={selection === null}
-                onChange={() => select(null)}
+                checked={!customMode}
+                onChange={() => {
+                  setCustomScope(undefined);
+                  select(null);
+                }}
               />{" "}
               {mode === "restore"
                 ? "Todas as tabelas do backup"
@@ -127,8 +147,14 @@ export function TableSelector({
               <input
                 type="radio"
                 name={`table-mode-${panelId}`}
-                checked={selection !== null}
-                onChange={() => select(tables?.map(identity) || [])}
+                checked={customMode}
+                onChange={() => {
+                  if (tables !== null) select(tables.map(identity));
+                  else {
+                    setCustomScope(scope);
+                    select(null);
+                  }
+                }}
               />{" "}
               Seleção personalizada
             </label>
@@ -227,7 +253,25 @@ export function TableSelector({
                   </caption>
                   <thead>
                     <tr>
-                      <th scope="col">Tabela</th>
+                      <th scope="col">
+                        <label className="table-name">
+                          <input
+                            ref={allCheckbox}
+                            type="checkbox"
+                            aria-label="Marcar todas as tabelas do catálogo"
+                            checked={allChecked}
+                            disabled={!tables.length}
+                            onChange={(event) =>
+                              select(
+                                event.target.checked
+                                  ? tables.map(identity)
+                                  : [],
+                              )
+                            }
+                          />
+                          <span>Tabela</span>
+                        </label>
+                      </th>
                       <th scope="col">
                         {mode === "restore"
                           ? "Tamanho nos arquivos"

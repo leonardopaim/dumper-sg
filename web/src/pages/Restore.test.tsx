@@ -220,3 +220,56 @@ describe("restauração", () => {
     },
   );
 });
+
+describe("origem compacta da restauração", () => {
+  beforeEach(() => localStorage.clear());
+  it("alterna entre catálogo e pasta manual e usa somente a origem escolhida", async () => {
+    const user = userEvent.setup();
+    const restore = vi.spyOn(api, "restore").mockResolvedValue(job);
+    render(
+      <Restore
+        {...props}
+        profiles={[profile]}
+        backups={[
+          {
+            name: "Salvo",
+            path: "/salvo",
+            modified_at: job.started_at,
+            complete: true,
+          },
+        ]}
+      />,
+    );
+    expect(
+      screen.queryByLabelText(/Diretório do backup/),
+    ).not.toBeInTheDocument();
+    await user.selectOptions(
+      screen.getByLabelText(/Backup do catálogo/),
+      "/salvo",
+    );
+    await user.click(screen.getByRole("radio", { name: "Pasta manual" }));
+    expect(
+      screen.queryByLabelText(/Backup do catálogo/),
+    ).not.toBeInTheDocument();
+    const input = screen.getByLabelText(/Diretório do backup/);
+    expect(input).toHaveValue("");
+    await user.type(input, "/manual");
+    await user.type(
+      screen.getByLabelText(/Banco isolado de destino/),
+      "isolado",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Iniciar restauração" }),
+    );
+    expect(screen.getByRole("dialog")).toHaveTextContent("/manual");
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Confirmar restauração",
+      }),
+    );
+    expect(restore).toHaveBeenCalledWith(
+      expect.objectContaining({ backup_dir: "/manual" }),
+    );
+    restore.mockRestore();
+  });
+});

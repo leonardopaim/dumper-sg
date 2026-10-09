@@ -159,3 +159,33 @@ describe("acompanhamento compacto", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("resultado da operação", () => {
+  it.each([
+    [{ status: "succeeded", warning_count: 0 }, "Operação concluída"],
+    [
+      {
+        status: "succeeded",
+        warning_count: 1,
+        warning_message: "Revise o ambiente",
+      },
+      "Concluído com alertas",
+    ],
+    [{ status: "succeeded", partial_result: true }, "Resultado parcial"],
+    [{ status: "failed" }, "A operação falhou"],
+    [{ status: "cancelled" }, "Operação cancelada"],
+  ] as const)("apresenta um resultado claro: %s", (changes, title) => {
+    render(
+      <JobMonitor
+        controller={controller({
+          ...running,
+          ...changes,
+          message: "Resultado registrado",
+        })}
+      />,
+    );
+    expect(screen.getByRole("heading", { name: title })).toBeInTheDocument();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+    expect(screen.getByText("Resultado registrado")).toBeInTheDocument();
+  });
+});

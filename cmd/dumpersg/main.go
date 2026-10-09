@@ -46,6 +46,7 @@ func run() error {
 	wslDistro := flag.String("wsl-distro", "", "distribuição WSL do Docker (padrão do WSL quando omitida)")
 	restartEnabled := flag.Bool("restart-enabled", false, "habilitar reinício quando iniciado por um launcher supervisor")
 	shutdownEnabled := flag.Bool("shutdown-enabled", false, "habilitar encerramento ocioso para o launcher instalado")
+	noTray := flag.Bool("no-tray", false, "não mostrar ícone na bandeja do Windows")
 	instanceID := flag.String("instance-id", "", "identificação pública definida pelo launcher")
 	flag.Parse()
 	host, port, err := net.SplitHostPort(*addr)
@@ -99,14 +100,11 @@ func run() error {
 			return nil
 		}
 	}
+	requestShutdown := func(ctx context.Context) error {
+		return prepareIdleShutdown(ctx, manager, shutdownRequested)
+	}
 	if *shutdownEnabled {
-		options.Shutdown = func(ctx context.Context) error {
-			if err := manager.PrepareRestart(ctx); err != nil {
-				return err
-			}
-			shutdownRequested <- struct{}{}
-			return nil
-		}
+		options.Shutdown = requestShutdown
 	}
 	handler, err := httpapi.New(repo, manager, options)
 	if err != nil {
@@ -121,6 +119,18 @@ func run() error {
 	defer stop()
 	finished := make(chan error, 1)
 	go func() { finished <- server.Serve(listener) }()
+	if !*noTray {
+		closeTray, trayErr := startTray("http://"+*addr, func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			return requestShutdown(ctx)
+		})
+		if trayErr != nil {
+			log.Print("Ícone da bandeja indisponível: ", trayErr)
+		} else {
+			defer closeTray()
+		}
+	}
 	fmt.Printf("DumperSG disponível em http://%s\nDados: %s\nCtrl+C encerra o serviço e cancela a operação ativa.\n", *addr, dataPath)
 	restarting := false
 	requestedShutdown := false
@@ -159,4 +169,15 @@ func defaultDataDir() string {
 		return "./data"
 	}
 	return filepath.Join(base, "DumperSG", "web")
+}
+
+func prepareIdleShutdown(ctx context.Context, manager *jobs.Manager, requested chan<- struct{}) error {
+	if err := manager.PrepareRestart(ctx); err != nil {
+		if errors.Is(err, core.ErrConflict) {
+			return fmt.Errorf("conclua ou cancele a operação em andamento antes de encerrar; verifique também se um reinício ou encerramento já foi solicitado: %w", core.ErrConflict)
+		}
+		return err
+	}
+	requested <- struct{}{}
+	return nil
 }

@@ -100,6 +100,9 @@ type Job struct {
 	Progress        int    `json:"progress"`
 	Message         string `json:"message"`
 	ExitCode        *int   `json:"exit_code,omitempty"`
+	WarningCount    int    `json:"warning_count,omitempty"`
+	WarningMessage  string `json:"warning_message,omitempty"`
+	PartialResult   bool   `json:"partial_result,omitempty"`
 	CleanupRequired bool   `json:"cleanup_required,omitempty"`
 	DockerIdentity  string `json:"docker_identity,omitempty"`
 }

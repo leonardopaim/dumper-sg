@@ -14,7 +14,12 @@ export type ProfileInput = Omit<Profile, "id" | "has_password"> & {
   password?: string;
 };
 export type JobKind =
-  "backup" | "restore" | "connection_test" | "create_database" | "table_list";
+  | "backup"
+  | "restore"
+  | "connection_test"
+  | "create_database"
+  | "table_list"
+  | "database_list";
 export type JobStatus =
   "running" | "cancel_requested" | "succeeded" | "failed" | "cancelled";
 export interface Job {
@@ -27,6 +32,9 @@ export interface Job {
   path: string;
   started_at: string;
   finished_at?: string;
+  warning_count?: number;
+  warning_message?: string;
+  partial_result?: boolean;
   cleanup_required?: boolean;
   progress: number;
   message: string;
@@ -100,5 +108,26 @@ export interface TableReference {
   name: string;
 }
 export interface BackupTableInfo extends TableInfo {
+  database: string;
+}
+
+export interface DatabaseInfo {
+  name: string;
+  group_id?: number;
+  group_name?: string;
+  companies?: CompanyInfo[];
+}
+export interface CompanyInfo {
+  company_id: number;
+  group_id: number;
+  legal_name: string;
+  trade_name: string;
+}
+export interface DatabaseCatalog {
+  databases: DatabaseInfo[];
+  warning?: string;
+}
+export interface BackupSource {
+  profile_id: number;
   database: string;
 }

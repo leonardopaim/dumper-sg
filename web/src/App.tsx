@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Archive,
   Database,
@@ -13,8 +13,14 @@ import {
   X,
 } from "lucide-react";
 import { api, errorMessage } from "./api";
-import { Alert, Badge, Button, isActive } from "./components/ui";
+import { Alert, Badge, Button, Modal, isActive } from "./components/ui";
 import { JobMonitor } from "./components/JobMonitor";
+import {
+  OperationFeedbackProvider,
+  operationNames,
+  type OperationFeedback,
+  type OperationRunner,
+} from "./components/OperationFeedback";
 import { ApplicationRestart } from "./components/ApplicationRestart";
 import { useJobs } from "./hooks/useJobs";
 import { useTheme } from "./hooks/useTheme";
@@ -22,11 +28,13 @@ import { Dashboard } from "./pages/Dashboard";
 import { Profiles } from "./pages/Profiles";
 import { Backup } from "./pages/Backup";
 import { Backups } from "./pages/Backups";
+import { Databases } from "./pages/Databases";
 import { Restore } from "./pages/Restore";
 import { History } from "./pages/History";
 import { Settings } from "./pages/Settings";
 import type {
   BackupEntry,
+  BackupSource,
   Diagnostics,
   Job,
   Profile,
@@ -35,6 +43,7 @@ import type {
 const mainNavigation = [
   { id: "dashboard", label: "Visão geral", icon: LayoutDashboard },
   { id: "backup", label: "Criar backup", icon: Archive },
+  { id: "databases", label: "Bancos disponíveis", icon: Database },
   { id: "restore", label: "Restaurar", icon: RotateCcw },
   { id: "backups", label: "Meus backups", icon: HardDriveDownload },
   { id: "history", label: "Histórico", icon: HistoryIcon },
@@ -48,25 +57,22 @@ const getPage = () =>
   navigation.some((item) => item.id === location.hash.slice(1))
     ? location.hash.slice(1)
     : "dashboard";
-export const monitorPreferenceKey = "dumpersg.showMonitor";
-function initialMonitorVisibility() {
-  try {
-    return localStorage.getItem(monitorPreferenceKey) === "true";
-  } catch {
-    return false;
-  }
-}
 export function App() {
   const { theme, changeTheme } = useTheme();
   const [page, setPage] = useState(getPage);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [monitorVisible, setMonitorVisible] = useState(
-    initialMonitorVisibility,
-  );
+  const [monitorVisible, setMonitorVisible] = useState(false);
+  const [feedback, setFeedback] = useState<OperationFeedback>();
+  const feedbackRequest = useRef<{
+    id: number;
+    kind: OperationFeedback["kind"];
+  } | null>(null);
+  const requestSequence = useRef(0);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [settings, setSettings] = useState<SettingsMap>({});
   const [backups, setBackups] = useState<BackupEntry[]>([]);
   const [restorePath, setRestorePath] = useState<string>();
+  const [backupSource, setBackupSource] = useState<BackupSource>();
   const [history, setHistory] = useState<Job[]>([]);
   const [diagnostics, setDiagnostics] = useState<Diagnostics>();
   const [version, setVersion] = useState("");
@@ -120,38 +126,21 @@ export function App() {
     );
   }, [reloadHistory, reloadBackups]);
   const jobs = useJobs(onComplete);
+  const openedJobs = useRef(new Set<string>());
   const activeJob = jobs.jobs.find((job) => isActive(job.status));
-  const showMonitor = (visible: boolean) => {
-    setMonitorVisible(visible);
-    try {
-      localStorage.setItem(monitorPreferenceKey, String(visible));
-    } catch {
-      /* A escolha continua funcionando quando o armazenamento está bloqueado. */
-    }
-  };
-  const scrollToMonitor = () =>
-    requestAnimationFrame(() =>
-      document.getElementById("activity-panel")?.scrollIntoView?.({
-        block: "nearest",
-        behavior: "smooth",
-      }),
-    );
   const selectJob = (job: Job) => {
+    feedbackRequest.current = null;
+    setFeedback(undefined);
     jobs.select(job);
-    showMonitor(true);
-    scrollToMonitor();
+    setMonitorVisible(true);
   };
-  const toggleMonitor = () => {
-    if (monitorVisible) {
-      showMonitor(false);
+  const openMonitor = () => {
+    if (feedback) {
+      setMonitorVisible(true);
       return;
     }
-    const job = jobs.selected || activeJob || jobs.jobs[0] || history[0];
+    const job = activeJob || jobs.selected || jobs.jobs[0] || history[0];
     if (job) selectJob(job);
-    else {
-      showMonitor(true);
-      scrollToMonitor();
-    }
   };
   const liveJobs = new Map(jobs.jobs.map((job) => [job.id, job]));
   const liveHistory = history.map((job) => liveJobs.get(job.id) || job);
@@ -176,262 +165,354 @@ export function App() {
     setPage(next);
     setMobileOpen(false);
   };
+  const runOperation: OperationRunner = async (kind, task, resultMessage) => {
+    const id = ++requestSequence.current;
+    feedbackRequest.current = { id, kind };
+    setFeedback({
+      id,
+      kind,
+      phase: "starting",
+      message: "Validando as configurações e preparando o ambiente…",
+    });
+    setMonitorVisible(true);
+    try {
+      const result = await task();
+      if (feedbackRequest.current?.id === id)
+        setFeedback({
+          id,
+          kind,
+          phase: "succeeded",
+          message: resultMessage?.(result) || "Operação concluída.",
+        });
+      return result;
+    } catch (error) {
+      if (feedbackRequest.current?.id === id)
+        setFeedback({
+          id,
+          kind,
+          phase:
+            error instanceof DOMException && error.name === "AbortError"
+              ? "cancelled"
+              : "failed",
+          message: errorMessage(error),
+        });
+      throw error;
+    }
+  };
   const onJob = (job: Job) => {
+    const first = !openedJobs.current.has(job.id);
+    const preparing = first && feedbackRequest.current?.kind === job.kind;
+    if (preparing) {
+      feedbackRequest.current = null;
+      setFeedback(undefined);
+    }
     jobs.accept(job);
+    if (first) {
+      openedJobs.current.add(job.id);
+      if (!preparing) setMonitorVisible(true);
+    }
     setHistory((rows) => [job, ...rows.filter((row) => row.id !== job.id)]);
   };
+  const monitorActive = feedback
+    ? feedback.phase === "starting"
+    : !!jobs.selected && isActive(jobs.selected.status);
+  const monitorKind = feedback?.kind || jobs.selected?.kind;
   return (
-    <div className="app-shell">
-      <a
-        className="skip-link"
-        href="#main-content"
-        onClick={(event) => {
-          event.preventDefault();
-          document.getElementById("main-content")?.focus();
-        }}
-      >
-        Pular para o conteúdo
-      </a>
-      {mobileOpen && (
-        <button
-          className="sidebar-scrim"
-          aria-label="Fechar navegação"
-          onClick={() => setMobileOpen(false)}
-        />
-      )}
-      <aside className={`sidebar ${mobileOpen ? "open" : ""}`}>
+    <OperationFeedbackProvider value={runOperation}>
+      <div className="app-shell">
         <a
-          className="brand"
-          href="#dashboard"
-          onClick={() => navigate("dashboard")}
+          className="skip-link"
+          href="#main-content"
+          onClick={(event) => {
+            event.preventDefault();
+            document.getElementById("main-content")?.focus();
+          }}
         >
-          <span>
-            <HardDriveDownload size={22} />
-          </span>
-          <strong>
-            Dumper<span>SG</span>
-            <small>DATABASE WORKSPACE</small>
-          </strong>
+          Pular para o conteúdo
         </a>
-        <div className="sidebar-caption">WORKSPACE</div>
-        <nav aria-label="Navegação principal">
-          {mainNavigation.map((item) => (
-            <a
-              key={item.id}
-              href={`#${item.id}`}
-              className={page === item.id ? "active" : ""}
-              aria-current={page === item.id ? "page" : undefined}
-              onClick={() => navigate(item.id)}
-            >
-              <item.icon size={19} />
-              <span>{item.label}</span>
-            </a>
-          ))}
-        </nav>
-        <div className="sidebar-bottom">
-          <div className="local-chip">
-            <span className={apiConnected ? "online-dot" : "offline-dot"} />
-            <div>
-              <strong>Ambiente local</strong>
-              <small>
-                {apiConnected ? "Core conectado" : "Conexão pendente"}
-              </small>
-            </div>
-            <Database size={17} />
-          </div>
-          <span className="sidebar-version">
-            DumperSG {version || "· API v1"}
-          </span>
-        </div>
-      </aside>
-      <div className="main-shell">
-        <header className="topbar">
-          <div className="topbar-location">
-            <button
-              className="icon-button mobile-menu"
-              aria-label={mobileOpen ? "Fechar menu" : "Abrir menu"}
-              aria-expanded={mobileOpen}
-              onClick={() => setMobileOpen(!mobileOpen)}
-            >
-              {mobileOpen ? <X size={20} /> : <Menu size={20} />}
-            </button>
-            <span>Workspace</span>
-            <span className="breadcrumb-separator">/</span>
+        {mobileOpen && (
+          <button
+            className="sidebar-scrim"
+            aria-label="Fechar navegação"
+            onClick={() => setMobileOpen(false)}
+          />
+        )}
+        <aside className={`sidebar ${mobileOpen ? "open" : ""}`}>
+          <a
+            className="brand"
+            href="#dashboard"
+            onClick={() => navigate("dashboard")}
+          >
+            <span>
+              <HardDriveDownload size={22} />
+            </span>
             <strong>
-              {navigation.find((item) => item.id === page)?.label}
+              Dumper<span>SG</span>
             </strong>
-          </div>
-          <div className="topbar-status">
-            <Button
-              type="button"
-              variant="secondary"
-              className="monitor-visibility-toggle"
-              aria-expanded={monitorVisible}
-              aria-controls="activity-panel"
-              onClick={toggleMonitor}
-            >
-              <Terminal size={15} />
-              {monitorVisible ? "Ocultar painel" : "Mostrar painel"}
-            </Button>
-            <nav className="topbar-management" aria-label="Gerenciamento">
-              {managementNavigation.map((item) => (
-                <a
-                  key={item.id}
-                  href={`#${item.id}`}
-                  className={`button secondary topbar-nav-link ${page === item.id ? "active" : ""}`}
-                  aria-label={item.label}
-                  aria-current={page === item.id ? "page" : undefined}
-                  title={item.label}
-                  onClick={() => navigate(item.id)}
-                >
-                  <item.icon size={15} />
-                  <span className="topbar-nav-label">{item.label}</span>
-                  {item.id === "profiles" && (
-                    <small className="topbar-profile-count" aria-hidden="true">
-                      {profiles.length}
-                    </small>
-                  )}
-                </a>
-              ))}
-            </nav>
-            <ApplicationRestart blocked={Boolean(activeJob)} />
-            {activeJob ? (
-              <button
-                className="active-job-link"
-                onClick={() => selectJob(activeJob)}
+          </a>
+          <nav aria-label="Navegação principal">
+            {mainNavigation.map((item) => (
+              <a
+                key={item.id}
+                href={`#${item.id}`}
+                className={page === item.id ? "active" : ""}
+                aria-current={page === item.id ? "page" : undefined}
+                onClick={() => navigate(item.id)}
               >
-                <Badge status={activeJob.status} />
-              </button>
-            ) : (
-              <span className="local-status">
-                <span className={apiConnected ? "online-dot" : "offline-dot"} />
-                {apiConnected ? "Core local conectado" : "API desconectada"}
-              </span>
-            )}
-            <span className="avatar" aria-label="Workspace local">
-              SG
+                <item.icon size={19} />
+                <span>{item.label}</span>
+              </a>
+            ))}
+          </nav>
+          <div className="sidebar-bottom">
+            <span className="sidebar-version">
+              DumperSG {version || "· API v1"}
             </span>
           </div>
-        </header>
-        <main id="main-content" className="main-content" tabIndex={-1}>
-          {error && (
-            <div className="load-error">
-              <Alert>{error}</Alert>
-              <Button
-                variant="secondary"
-                disabled={loading}
-                onClick={() => void initialize()}
+        </aside>
+        <div className="main-shell">
+          <header className="topbar">
+            <div className="topbar-location">
+              <button
+                className="icon-button mobile-menu"
+                aria-label={mobileOpen ? "Fechar menu" : "Abrir menu"}
+                aria-expanded={mobileOpen}
+                onClick={() => setMobileOpen(!mobileOpen)}
               >
-                <RefreshCw size={15} />
-                Tentar novamente
-              </Button>
+                {mobileOpen ? <X size={20} /> : <Menu size={20} />}
+              </button>
+              <strong>
+                {navigation.find((item) => item.id === page)?.label}
+              </strong>
             </div>
-          )}
-          {loading ? (
-            <div className="loading-state" role="status">
-              <RefreshCw className="spin" size={24} />
-              <strong>Conectando ao core local…</strong>
-              <p>Carregando perfis, configuração e histórico.</p>
-            </div>
-          ) : (
-            <>
-              {page === "dashboard" && (
-                <Dashboard
-                  profiles={profiles}
-                  history={combinedHistory}
-                  diagnostics={diagnostics}
-                  onNavigate={navigate}
-                  onSelect={selectJob}
-                />
+            <div className="topbar-status">
+              {(feedback || jobs.selected || activeJob) && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={openMonitor}
+                  aria-label="Ver operação"
+                >
+                  <Terminal size={15} /> Ver operação
+                  {activeJob && <Badge status={activeJob.status} />}
+                </Button>
               )}
-              {page === "profiles" && (
-                <Profiles
-                  profiles={profiles}
-                  reload={reload}
-                  onJob={onJob}
-                  active={!!activeJob}
-                />
-              )}
-              {page === "backup" && (
-                <Backup
-                  profiles={profiles}
-                  settings={settings}
-                  onJob={onJob}
-                  active={!!activeJob}
-                  onProfiles={() => navigate("profiles")}
-                />
-              )}
-              {page === "restore" && (
-                <Restore
-                  initialBackup={restorePath}
-                  onBackupApplied={() => setRestorePath(undefined)}
-                  profiles={profiles}
-                  backups={backups}
-                  reloadBackups={reloadBackups}
-                  onJob={onJob}
-                  active={!!activeJob}
-                  onProfiles={() => navigate("profiles")}
-                />
-              )}
-              {page === "backups" && (
-                <Backups
-                  backups={backups}
-                  reload={reloadBackups}
-                  active={!!activeJob}
-                  onRestore={(path) => {
-                    setRestorePath(path);
-                    navigate("restore");
-                  }}
-                />
-              )}
-              {page === "history" && (
-                <History
-                  history={combinedHistory}
-                  reload={reloadHistory}
-                  onSelect={selectJob}
-                  selectedId={jobs.selected?.id}
-                />
-              )}
-              {page === "settings" && (
-                <Settings
-                  settings={settings}
-                  theme={theme}
-                  onThemeChange={changeTheme}
-                  diagnostics={diagnostics}
-                  version={version}
-                  onSettings={setSettings}
-                  reload={reload}
-                  refreshDiagnostics={refreshDiagnostics}
-                />
-              )}
-            </>
-          )}
-          <div id="activity-panel" hidden={!monitorVisible}>
-            {monitorVisible && (
-              <>
-                <JobMonitor controller={jobs} />
-                {!jobs.selected && !jobs.error && (
-                  <section
-                    className="job-monitor empty"
-                    aria-label="Acompanhamento da operação"
+              <nav className="topbar-management" aria-label="Gerenciamento">
+                {managementNavigation.map((item) => (
+                  <a
+                    key={item.id}
+                    href={`#${item.id}`}
+                    className={`button secondary topbar-nav-link ${page === item.id ? "active" : ""}`}
+                    aria-label={item.label}
+                    aria-current={page === item.id ? "page" : undefined}
+                    title={item.label}
+                    onClick={() => navigate(item.id)}
                   >
-                    <Terminal size={22} />
-                    <strong>Nenhuma operação selecionada</strong>
-                    <p>
-                      Inicie uma operação ou selecione os detalhes no histórico
-                      para acompanhar o progresso e os logs.
-                    </p>
-                  </section>
+                    <item.icon size={15} />
+                    <span className="topbar-nav-label">{item.label}</span>
+                    {item.id === "profiles" && (
+                      <small
+                        className="topbar-profile-count"
+                        aria-hidden="true"
+                      >
+                        {profiles.length}
+                      </small>
+                    )}
+                  </a>
+                ))}
+              </nav>
+              {!activeJob && (
+                <span className="local-status">
+                  <span
+                    className={apiConnected ? "online-dot" : "offline-dot"}
+                  />
+                  {apiConnected ? "Core local conectado" : "API desconectada"}
+                </span>
+              )}
+            </div>
+          </header>
+          <main id="main-content" className="main-content" tabIndex={-1}>
+            {error && (
+              <div className="load-error">
+                <Alert>{error}</Alert>
+                <Button
+                  variant="secondary"
+                  disabled={loading}
+                  onClick={() => void initialize()}
+                >
+                  <RefreshCw size={15} />
+                  Tentar novamente
+                </Button>
+              </div>
+            )}
+            {loading ? (
+              <div className="loading-state" role="status">
+                <RefreshCw className="spin" size={24} />
+                <strong>Conectando ao core local…</strong>
+                <p>Carregando perfis, configuração e histórico.</p>
+              </div>
+            ) : (
+              <>
+                {page === "dashboard" && (
+                  <Dashboard
+                    profiles={profiles}
+                    history={combinedHistory}
+                    diagnostics={diagnostics}
+                    onNavigate={navigate}
+                    onSelect={selectJob}
+                  />
+                )}
+                {page === "profiles" && (
+                  <Profiles
+                    profiles={profiles}
+                    reload={reload}
+                    onJob={onJob}
+                    active={!!activeJob}
+                  />
+                )}
+                {page === "databases" && (
+                  <Databases
+                    profiles={profiles}
+                    active={!!activeJob}
+                    onJob={onJob}
+                    onProfiles={() => navigate("profiles")}
+                    onBackup={(source) => {
+                      setBackupSource(source);
+                      navigate("backup");
+                    }}
+                  />
+                )}
+                {page === "backup" && (
+                  <Backup
+                    initialSource={backupSource}
+                    onSourceApplied={() => setBackupSource(undefined)}
+                    onBrowseDatabases={() => navigate("databases")}
+                    profiles={profiles}
+                    settings={settings}
+                    onJob={onJob}
+                    active={!!activeJob}
+                    onProfiles={() => navigate("profiles")}
+                  />
+                )}
+                {page === "restore" && (
+                  <Restore
+                    initialBackup={restorePath}
+                    onBackupApplied={() => setRestorePath(undefined)}
+                    profiles={profiles}
+                    backups={backups}
+                    reloadBackups={reloadBackups}
+                    onJob={onJob}
+                    active={!!activeJob}
+                    onProfiles={() => navigate("profiles")}
+                  />
+                )}
+                {page === "backups" && (
+                  <Backups
+                    backups={backups}
+                    reload={reloadBackups}
+                    active={!!activeJob}
+                    onRestore={(path) => {
+                      setRestorePath(path);
+                      navigate("restore");
+                    }}
+                  />
+                )}
+                {page === "history" && (
+                  <History
+                    history={combinedHistory}
+                    reload={reloadHistory}
+                    onSelect={selectJob}
+                    selectedId={jobs.selected?.id}
+                  />
+                )}
+                {page === "settings" && (
+                  <Settings
+                    settings={settings}
+                    theme={theme}
+                    onThemeChange={changeTheme}
+                    diagnostics={diagnostics}
+                    version={version}
+                    onSettings={setSettings}
+                    reload={reload}
+                    refreshDiagnostics={refreshDiagnostics}
+                    maintenanceAction={
+                      <ApplicationRestart blocked={Boolean(activeJob)} />
+                    }
+                  />
                 )}
               </>
             )}
-          </div>
-          <footer className="main-footer">
-            <span>Seus dados permanecem no seu ambiente.</span>
-            <span>MYDUMPER + MYLOADER · POWERED BY GO</span>
-          </footer>
-        </main>
+            {monitorVisible && monitorKind && (
+              <Modal
+                title={`${operationNames[monitorKind]} · ${feedback?.phase === "starting" ? "Preparando" : monitorActive ? "Em andamento" : "Resultado"}`}
+                onClose={() => setMonitorVisible(false)}
+                closeLabel={
+                  monitorActive ? "Minimizar operação" : "Fechar resultado"
+                }
+                className="operation-modal"
+              >
+                {feedback ? (
+                  feedback.phase === "starting" ? (
+                    <div
+                      className="operation-preparing"
+                      role="status"
+                      aria-live="polite"
+                    >
+                      <RefreshCw className="spin" size={24} />
+                      <strong>{feedback.message}</strong>
+                      <p>
+                        O acompanhamento será atualizado assim que o
+                        processamento iniciar.
+                      </p>
+                    </div>
+                  ) : (
+                    <div
+                      className={`operation-result ${feedback.phase === "succeeded" ? "success" : feedback.phase === "failed" ? "error" : "cancelled"}`}
+                      role="status"
+                    >
+                      <h3>
+                        {feedback.phase === "failed"
+                          ? "Não foi possível concluir a ação"
+                          : feedback.phase === "cancelled"
+                            ? "Consulta cancelada"
+                            : "Operação concluída"}
+                      </h3>
+                      <p>{feedback.message}</p>
+                    </div>
+                  )
+                ) : (
+                  <JobMonitor controller={jobs} />
+                )}
+                <div className="modal-footer">
+                  {!monitorActive && !feedback && jobs.selected && (
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        setMonitorVisible(false);
+                        navigate(
+                          jobs.selected?.kind === "backup"
+                            ? "backups"
+                            : "history",
+                        );
+                      }}
+                    >
+                      {jobs.selected.kind === "backup"
+                        ? "Ver backups"
+                        : "Ver histórico"}
+                    </Button>
+                  )}
+                  <Button
+                    variant={monitorActive ? "secondary" : "primary"}
+                    onClick={() => setMonitorVisible(false)}
+                  >
+                    {monitorActive ? "Minimizar" : "Concluir"}
+                  </Button>
+                </div>
+              </Modal>
+            )}
+          </main>
+        </div>
       </div>
-    </div>
+    </OperationFeedbackProvider>
   );
 }

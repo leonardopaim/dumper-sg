@@ -1,13 +1,6 @@
-import { useEffect, useState } from "react";
-import {
-  CheckCircle2,
-  Container,
-  Download,
-  Palette,
-  RefreshCw,
-  Save,
-  Shield,
-} from "lucide-react";
+import { useOperationRequest } from "../components/OperationFeedback";
+import { useEffect, useState, type ReactNode } from "react";
+import { Download, RefreshCw, Save } from "lucide-react";
 import { api, errorMessage } from "../api";
 import { Alert, Button, Field, Modal, PageHeader } from "../components/ui";
 import type { Theme } from "../hooks/useTheme";
@@ -21,6 +14,7 @@ export function Settings({
   onSettings,
   reload,
   refreshDiagnostics,
+  maintenanceAction,
 }: {
   settings: SettingsMap;
   theme: Theme;
@@ -30,7 +24,9 @@ export function Settings({
   onSettings: (data: SettingsMap) => void;
   reload: () => Promise<void>;
   refreshDiagnostics: () => Promise<void>;
+  maintenanceAction?: ReactNode;
 }) {
+  const runOperation = useOperationRequest();
   const [directory, setDirectory] = useState(settings.default_backup_dir || "");
   const [path, setPath] = useState("");
   const [busy, setBusy] = useState(false);
@@ -59,7 +55,12 @@ export function Settings({
     setBusy(true);
     setError("");
     try {
-      await refreshDiagnostics();
+      await runOperation(
+        "diagnostics",
+        refreshDiagnostics,
+        () =>
+          "Verificação concluída. Consulte o estado do ambiente em Configurações.",
+      );
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -68,10 +69,16 @@ export function Settings({
   };
   const importLegacy = async () => {
     setBusy(true);
+    setConfirm(false);
     setError("");
     setNotice("");
     try {
-      const result = await api.importLegacy(path);
+      const result = await runOperation(
+        "legacy_import",
+        () => api.importLegacy(path),
+        (result) =>
+          `Importação concluída: ${result.profiles} perfis e ${result.jobs} operações importados.`,
+      );
       await reload();
       setConfirm(false);
       setNotice(
@@ -88,16 +95,13 @@ export function Settings({
       <PageHeader
         eyebrow="PREFERÊNCIAS LOCAIS"
         title="Configurações"
-        description="Escolha o tema, defina seu diretório padrão, verifique o ambiente e importe dados do aplicativo anterior."
+        description="Personalize a aparência e o armazenamento."
       />
       {notice && <Alert success>{notice}</Alert>}
       {error && !confirm && <Alert>{error}</Alert>}
       <div className="settings-layout">
         <section className="card form-card full">
           <div className="card-heading">
-            <span className="icon-tile small">
-              <Palette size={19} />
-            </span>
             <div>
               <h2>Aparência</h2>
               <p>Escolha como o DumperSG aparece neste navegador.</p>
@@ -118,9 +122,6 @@ export function Settings({
         </section>
         <section className="card form-card">
           <div className="card-heading">
-            <span className="icon-tile small">
-              <Save size={19} />
-            </span>
             <div>
               <h2>Armazenamento</h2>
               <p>O diretório usado quando o destino do backup estiver vazio.</p>
@@ -146,98 +147,87 @@ export function Settings({
             </div>
           </form>
         </section>
-        <section className="card form-card">
-          <div className="card-heading">
-            <span className="icon-tile small purple">
-              <Container size={20} />
-            </span>
-            <div>
-              <h2>Ambiente Docker</h2>
-              <p>Necessário para executar mydumper e myloader.</p>
+        <details className="card form-card maintenance-group">
+          <summary>
+            Manutenção <small>Ambiente, reinício e importação</small>
+          </summary>
+          <section className="maintenance-section">
+            <div className="card-heading">
+              <div>
+                <h2>Ambiente Docker</h2>
+                <p>Necessário para executar mydumper e myloader.</p>
+              </div>
             </div>
-          </div>
-          <div
-            className={`diagnostic ${diagnostics?.available ? "available" : ""}`}
-          >
-            <span className="diagnostic-dot" />
-            <div>
-              <strong>
-                {diagnostics
-                  ? diagnostics.available
-                    ? "Docker disponível"
-                    : "Docker indisponível"
-                  : "Diagnóstico pendente"}
-              </strong>
-              <p>
-                {diagnostics?.message ||
-                  "Atualize o diagnóstico para verificar o ambiente."}
-              </p>
-              {diagnostics?.version && <code>{diagnostics.version}</code>}
-            </div>
-          </div>
-          <Button
-            variant="secondary"
-            busy={busy}
-            onClick={() => void diagnose()}
-          >
-            <RefreshCw size={16} />
-            Verificar novamente
-          </Button>
-        </section>
-        <section className="card form-card legacy-card">
-          <div className="card-heading">
-            <span className="icon-tile small amber">
-              <Download size={19} />
-            </span>
-            <div>
-              <h2>Importar aplicativo anterior</h2>
-              <p>Traga perfis e histórico do SQLite legado do DumperSG.</p>
-            </div>
-          </div>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              setError("");
-              setConfirm(true);
-            }}
-          >
-            <Field
-              label="Caminho do SQLite legado"
-              hint="A importação preserva o arquivo original e mantém perfis existentes com o mesmo nome."
+            <div
+              className={`diagnostic ${diagnostics?.available ? "available" : ""}`}
             >
-              <input
-                required
-                value={path}
-                onChange={(e) => setPath(e.target.value)}
-                placeholder="Caminho absoluto do arquivo .db"
-              />
-            </Field>
-            <div className="form-footer">
-              <span>A importação só ocorre quando você confirmar.</span>
-              <Button
-                type="submit"
-                variant="secondary"
-                disabled={busy || !path.trim()}
-              >
-                <Download size={16} />
-                Importar legado
-              </Button>
+              <span className="diagnostic-dot" />
+              <div>
+                <strong>
+                  {diagnostics
+                    ? diagnostics.available
+                      ? "Docker disponível"
+                      : "Docker indisponível"
+                    : "Diagnóstico pendente"}
+                </strong>
+                <p>
+                  {diagnostics?.message ||
+                    "Atualize o diagnóstico para verificar o ambiente."}
+                </p>
+                {diagnostics?.version && <code>{diagnostics.version}</code>}
+              </div>
             </div>
-          </form>
-        </section>
-        <section className="card about-card">
-          <Shield size={25} />
-          <h2>Executado na sua máquina</h2>
-          <p>
-            API em loopback, token de sessão nas alterações e credenciais
-            mantidas pelo backend local.
-          </p>
-          <div>
-            <CheckCircle2 size={15} />
-            Senhas nunca são exibidas pela API
-          </div>
-          <small>DumperSG {version || "· core local"} · API v1</small>
-        </section>
+            <Button
+              variant="secondary"
+              busy={busy}
+              onClick={() => void diagnose()}
+            >
+              <RefreshCw size={16} />
+              Verificar novamente
+            </Button>
+          </section>
+          <div className="maintenance-restart">{maintenanceAction}</div>
+          <details className="advanced-options">
+            <summary>Importar aplicativo anterior</summary>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                setError("");
+                setConfirm(true);
+              }}
+            >
+              <Field
+                label="Caminho do SQLite legado"
+                hint="A importação preserva o arquivo original e mantém perfis existentes com o mesmo nome."
+              >
+                <input
+                  required
+                  value={path}
+                  onChange={(e) => setPath(e.target.value)}
+                  placeholder="Caminho absoluto do arquivo .db"
+                />
+              </Field>
+              <div className="form-footer">
+                <span>A importação só ocorre quando você confirmar.</span>
+                <Button
+                  type="submit"
+                  variant="secondary"
+                  disabled={busy || !path.trim()}
+                >
+                  <Download size={16} />
+                  Importar legado
+                </Button>
+              </div>
+            </form>
+          </details>
+          <details className="advanced-options">
+            <summary>Sobre o DumperSG</summary>
+            <p>
+              DumperSG {version || "· core local"}. Executado no seu computador;
+              credenciais mantidas no backend local.
+            </p>
+          </details>
+        </details>
       </div>
       {confirm && (
         <Modal

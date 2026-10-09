@@ -1,12 +1,6 @@
+import { useOperationRequest } from "../components/OperationFeedback";
 import { useState } from "react";
-import {
-  Database,
-  Edit3,
-  Plus,
-  ShieldCheck,
-  Trash2,
-  PlugZap,
-} from "lucide-react";
+import { Edit3, Plus, Trash2, PlugZap } from "lucide-react";
 import { ProfilePresets } from "../components/ProfilePresets";
 import { api, errorMessage } from "../api";
 import {
@@ -39,6 +33,7 @@ export function Profiles({
   onJob: (job: Job) => void;
   active: boolean;
 }) {
+  const runOperation = useOperationRequest();
   const [editing, setEditing] = useState<Profile | "new" | null>(null);
   const [managing, setManaging] = useState<Profile | null>(null);
   const [removing, setRemoving] = useState<Profile | null>(null);
@@ -112,7 +107,11 @@ export function Profiles({
     setError("");
     setNotice("");
     try {
-      onJob(await api.testConnection(profile.id));
+      onJob(
+        await runOperation("connection_test", () =>
+          api.testConnection(profile.id),
+        ),
+      );
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -124,7 +123,7 @@ export function Profiles({
       <PageHeader
         eyebrow="CONEXÕES"
         title="Perfis de banco"
-        description="Conexões prontas para suas operações, com credenciais guardadas no core local."
+        description="Gerencie e teste suas conexões."
         action={
           <Button onClick={() => open("new")}>
             <Plus size={17} />
@@ -140,81 +139,77 @@ export function Profiles({
           restaurações.
         </Empty>
       ) : (
-        <div className="profile-grid">
-          {profiles.map((profile) => (
-            <article className="card profile-card" key={profile.id}>
-              <div className="profile-top">
-                <span className="icon-tile">
-                  <Database size={22} />
-                </span>
-                {profile.ssl && (
-                  <span className="tag">
-                    <ShieldCheck size={13} /> SSL
-                  </span>
-                )}
-              </div>
-              <h2>{profile.name}</h2>
-              <p className="profile-host">
-                {profile.host}:{profile.port}
-              </p>
-              <dl className="profile-details">
-                <div>
-                  <dt>Usuário</dt>
-                  <dd>{profile.user}</dd>
-                </div>
-                <div>
-                  <dt>Banco padrão</dt>
-                  <dd>{profile.database || "Não definido"}</dd>
-                </div>
-                <div>
-                  <dt>Threads</dt>
-                  <dd>{profile.threads}</dd>
-                </div>
-                <div>
-                  <dt>Senha</dt>
-                  <dd>
-                    {profile.has_password ? "Configurada" : "Não configurada"}
-                  </dd>
-                </div>
-              </dl>
-              <div className="profile-actions">
-                <Button
-                  variant="secondary"
-                  disabled={active || busy}
-                  onClick={() => void test(profile)}
-                >
-                  <PlugZap size={16} />
-                  Testar
-                </Button>
-                <button
-                  className="icon-button"
-                  aria-label={`Editar ${profile.name}`}
-                  onClick={() => open(profile)}
-                >
-                  <Edit3 size={17} />
-                </button>
-                <button
-                  className="icon-button danger-text"
-                  aria-label={`Excluir ${profile.name}`}
-                  disabled={active || busy}
-                  onClick={() => {
-                    setRemoving(profile);
-                    setError("");
-                  }}
-                >
-                  <Trash2 size={17} />
-                </button>
-              </div>
-              <Button
-                className="profile-presets-action"
-                variant="secondary"
-                onClick={() => setManaging(profile)}
-              >
-                Seleções de tabelas
-              </Button>
-            </article>
-          ))}
-        </div>
+        <section className="card profile-list table-scroll">
+          <table>
+            <caption className="sr-only">Perfis de conexão</caption>
+            <thead>
+              <tr>
+                <th>Perfil</th>
+                <th>Servidor</th>
+                <th>Banco padrão</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {profiles.map((profile) => (
+                <tr key={profile.id}>
+                  <td>
+                    <strong>{profile.name}</strong>
+                  </td>
+                  <td>
+                    {profile.host}:{profile.port}
+                  </td>
+                  <td>{profile.database || "Não definido"}</td>
+                  <td>
+                    <div className="profile-row-actions">
+                      <Button
+                        variant="secondary"
+                        disabled={active || busy}
+                        onClick={() => void test(profile)}
+                      >
+                        <PlugZap size={15} /> Testar
+                      </Button>
+                      <button
+                        className="icon-button"
+                        aria-label={`Editar ${profile.name}`}
+                        onClick={() => open(profile)}
+                      >
+                        <Edit3 size={17} />
+                      </button>
+                      <details className="row-actions">
+                        <summary
+                          aria-label={`Mais ações de ${profile.name}`}
+                          role="button"
+                        >
+                          •••
+                        </summary>
+                        <div>
+                          <Button
+                            variant="ghost"
+                            onClick={() => setManaging(profile)}
+                          >
+                            Seleções de tabelas
+                          </Button>
+                          <Button
+                            variant="danger"
+                            aria-label={`Excluir ${profile.name}`}
+                            disabled={active || busy}
+                            onClick={() => {
+                              setRemoving(profile);
+                              setError("");
+                            }}
+                          >
+                            <Trash2 size={15} /> Excluir
+                          </Button>
+                        </div>
+                      </details>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
       )}
       {managing && (
         <ProfilePresets
@@ -323,22 +318,29 @@ export function Profiles({
                   />
                 </Field>
               )}
-              <Field label="Threads padrão">
-                <input
-                  type="number"
-                  min={1}
-                  max={128}
-                  required
-                  value={form.threads}
-                  onChange={(e) => update("threads", Number(e.target.value))}
-                />
-              </Field>
-              <Toggle
-                label="Usar SSL"
-                hint="Conexão criptografada."
-                checked={form.ssl}
-                onChange={(value) => update("ssl", value)}
-              />
+              <details className="advanced-options full">
+                <summary>Opções avançadas</summary>
+                <div className="form-grid">
+                  <Field label="Threads padrão">
+                    <input
+                      type="number"
+                      min={1}
+                      max={128}
+                      required
+                      value={form.threads}
+                      onChange={(e) =>
+                        update("threads", Number(e.target.value))
+                      }
+                    />
+                  </Field>
+                  <Toggle
+                    label="Usar SSL"
+                    hint="Conexão criptografada."
+                    checked={form.ssl}
+                    onChange={(value) => update("ssl", value)}
+                  />
+                </div>
+              </details>
             </div>
             <div className="modal-footer">
               <Button

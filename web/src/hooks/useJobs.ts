@@ -23,7 +23,14 @@ export function useJobs(onComplete: () => void) {
       if (old && isActive(old.status) && !isActive(job.status)) finished = true;
     }
     previous.current = new Map(rows.map((job) => [job.id, job]));
-    setJobs(rows);
+    setJobs((existing) => [
+      ...rows,
+      ...existing.filter(
+        (job) =>
+          job.id === selection.current &&
+          !rows.some((row) => row.id === job.id),
+      ),
+    ]);
     if (!selection.current) {
       const current = rows.find(
         (job) => isActive(job.status) || job.cleanup_required,

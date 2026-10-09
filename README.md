@@ -2,73 +2,49 @@
 
 Aplicação web local para criar e restaurar backups MySQL, com perfis de conexão, histórico e logs opcionais. Usa Go, React e Docker (Desktop ou Engine no WSL).
 
-## Instalar e compartilhar com o time
+## Instalar e usar
 
-Compartilhe `dist\releases\DumperSG-Setup-1.0.0-windows-x64.exe`. A pessoa instala, abre o atalho **DumperSG** e cadastra seus perfis. O navegador abre automaticamente. Requer Docker disponível; as imagens são baixadas no primeiro uso. Não exige Go, Node.js, Nginx ou código-fonte.
+Use o instalador `DumperSG-Setup-1.0.2-windows-x64.exe` em `dist\releases`. Depois abra **DumperSG** pelo menu Iniciar ou pelo atalho da área de trabalho. O navegador abre automaticamente em **http://127.0.0.1:8787**.
 
-Para gerar um novo instalador: `.\scripts\build-installer.ps1 -Version 1.0.0`. Somente quem compila precisa de Go, Node.js e Inno Setup 6. Veja o [guia de distribuição](docs/distribuicao.md).
+Requer Docker Desktop com containers Linux ou Docker Engine no WSL. As imagens são baixadas no primeiro uso. Quem usa a aplicação não precisa de Go, Node.js, Nginx nem código-fonte.
 
-## Executar
+Para iniciar automaticamente, marque **Iniciar ao entrar na minha conta do Windows** no instalador. A instalação cuida dessa opção; não instale a antiga tarefa do projeto nem execute os scripts de inicialização da cópia avulsa.
 
-Com o executável já compilado:
+No Windows, o ícone do DumperSG fica junto ao relógio, possivelmente na seta de ícones ocultos. Pelo botão direito, use **Abrir DumperSG** ou **Encerrar DumperSG**. O encerramento é bloqueado enquanto houver operação ativa. O atalho **Encerrar DumperSG** no menu Iniciar também está disponível. Fechar o navegador mantém a aplicação em execução.
 
-```powershell
-.\scripts\start.ps1
-```
+Perfis, configurações, histórico, backups e logs ficam em `%APPDATA%\DumperSG\web` e são preservados ao atualizar ou desinstalar.
 
-Abra **http://127.0.0.1:8787**. Use **Ctrl+C** para encerrar.
+## Gerar um novo instalador
 
-O Docker é detectado automaticamente: abra o **Docker Desktop com containers Linux** ou deixe o **Docker Engine no WSL** disponível. Perfis, backups e logs ficam em `%APPDATA%\DumperSG\web`. Go e Node.js são necessários apenas para compilar.
-
-## Compilar ou atualizar
-
-Requer Go 1.26+, Node.js 24 e npm:
+Somente quem compila precisa de **Go 1.26+**, **Node.js 24 com npm** e **Inno Setup 6**. No PowerShell:
 
 ```powershell
-.\scripts\build.ps1
+cd C:\Leo\DumperSG
+.\scripts\build-installer.ps1 -Version 1.0.2
 ```
 
-O resultado é `dist\dumpersg.exe`, com a interface incluída.
+O script instala as dependências web, executa os testes, compila a interface, o core e o launcher e gera `dist\releases\DumperSG-Setup-1.0.2-windows-x64.exe`, acompanhado do SHA256. Não é necessário executar `build.ps1` antes.
 
-Se as imagens ainda não estiverem disponíveis, no Docker Desktop:
+Se o PowerShell bloquear o script, execute:
 
 ```powershell
-docker pull mydumper/mydumper:latest
-docker pull mysql:8.4.3
+powershell -ExecutionPolicy Bypass -File .\scripts\build-installer.ps1 -Version 1.0.2
 ```
 
-No WSL, use `wsl.exe --distribution Ubuntu --exec` antes de cada comando `docker`. O [guia de operação](docs/operacao.md) explica como escolher explicitamente o ambiente e acessar bancos locais.
+Nas próximas versões, altere o número informado em `-Version`. Compartilhe apenas o Setup gerado; os arquivos intermediários em `dist\package-<versão>` são usados pelo build.
 
-## Iniciar automaticamente
+## Atualizar a instalação
 
-Execute na sua conta do Windows:
+1. Conclua ou cancele a operação em andamento e aguarde o término.
+2. Escolha **Encerrar DumperSG** pela bandeja ou pelo menu Iniciar.
+3. Execute o novo Setup e mantenha a pasta da instalação existente.
+4. Abra **DumperSG** pelo atalho instalado. Se a página antiga continuar aberta, atualize-a com **Ctrl+F5**.
 
-```powershell
-.\scripts\autostart.ps1 -Action Install -StartNow
-```
-
-A aplicação inicia em segundo plano ao entrar nessa conta, com detecção automática de Docker e o mesmo diretório de dados. Para consultar ou remover a inicialização:
-
-```powershell
-.\scripts\autostart.ps1 -Action Status
-.\scripts\autostart.ps1 -Action Remove
-```
-
-O [guia de inicialização automática e Nginx](docs/inicializacao-automatica.md) explica o proxy local opcional em **http://127.0.0.1:8788**.
-
-## Reiniciar
-
-Use **Reiniciar** na barra superior ou execute:
-
-```powershell
-.\scripts\restart.ps1
-```
-
-Se o backend estiver travado, use `.\scripts\restart.ps1 -Force` para reiniciar a cópia da inicialização automática. O reinício normal é bloqueado durante operações ativas; o forçado pode deixar uma operação interrompida pendente de limpeza.
+O botão **Reiniciar** na interface reinicia a aplicação instalada; a atualização do executável é feita pelo novo Setup.
 
 ## Mais informações
 
+- [Distribuição e validação do instalador](docs/distribuicao.md)
 - [Operação, desenvolvimento, importação e testes](docs/operacao.md)
 - [Contrato da API](docs/api-contract.md)
-- [Plano de migração](docs/plano-go-web-local.md)
 - [Versão desktop anterior](app/README.md)

@@ -31,7 +31,7 @@ type execution struct {
 	file     *os.File
 	logBytes int
 	err      error
-	catalog  *tableCatalog
+	catalog  resultCatalog
 }
 
 type Manager struct {
@@ -166,13 +166,13 @@ func (m *Manager) start(ctx context.Context, p core.Profile, cmd core.Command, j
 	return m.startCollected(ctx, p, cmd, job, nil)
 }
 
-func (m *Manager) startCollected(ctx context.Context, p core.Profile, cmd core.Command, job core.Job, catalog *tableCatalog) (core.Job, error) {
+func (m *Manager) startCollected(ctx context.Context, p core.Profile, cmd core.Command, job core.Job, catalog resultCatalog) (core.Job, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.startCollectedLocked(ctx, p, cmd, job, catalog)
 }
 
-func (m *Manager) startCollectedLocked(ctx context.Context, p core.Profile, cmd core.Command, job core.Job, catalog *tableCatalog) (core.Job, error) {
+func (m *Manager) startCollectedLocked(ctx context.Context, p core.Profile, cmd core.Command, job core.Job, catalog resultCatalog) (core.Job, error) {
 	if m.initErr != nil {
 		return core.Job{}, m.initErr
 	}
@@ -205,6 +205,9 @@ func (m *Manager) startCollectedLocked(ctx context.Context, p core.Profile, cmd 
 	job.Status, job.StartedAt, job.Message = "running", timestamp(), "Operação iniciada; progresso estimado."
 	if catalog != nil {
 		job.Message = "Consultando tabelas e views..."
+		if job.Kind == "database_list" {
+			job.Message = "Consultando bancos disponíveis..."
+		}
 	}
 	job.ProfileID, job.ProfileName = p.ID, p.Name
 	if err := m.repo.SaveJob(ctx, job); err != nil {
@@ -240,6 +243,10 @@ func redact(text string, secrets []string) string {
 
 func (m *Manager) eventLocked(x *execution, level, message string) {
 	message = redact(message, x.secrets)
+	if strings.EqualFold(level, "warning") || strings.EqualFold(level, "warn") {
+		x.job.WarningCount++
+		x.job.WarningMessage = message
+	}
 	x.sequence++
 	event := core.Event{Sequence: x.sequence, Time: timestamp(), Level: level, Message: message}
 	x.events = append(x.events, event)
@@ -300,11 +307,19 @@ func (m *Manager) run(ctx context.Context, x *execution, cmd core.Command) {
 			}
 		}
 	})
+	if err == nil && ctx.Err() == nil && x.catalog != nil {
+		m.mu.Lock()
+		err = x.catalog.failure()
+		m.mu.Unlock()
+		if optional, ok := x.catalog.(optionalCatalog); err == nil && ok {
+			err = m.runOptionalCatalog(ctx, x, cmd, optional)
+		}
+	}
 	close(progressDone)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if err == nil && ctx.Err() == nil && x.catalog != nil && x.catalog.err != nil {
-		err = x.catalog.err
+	if err == nil && ctx.Err() == nil && x.catalog != nil {
+		err = x.catalog.failure()
 	}
 	x.err = err
 	x.job.FinishedAt = timestamp()
@@ -326,8 +341,10 @@ func (m *Manager) run(ctx context.Context, x *execution, cmd core.Command) {
 	default:
 		x.job.Status, x.job.Message, x.job.Progress = "succeeded", "Operação concluída.", 100
 		if x.catalog != nil {
-			core.SortTables(x.catalog.tables)
-			x.job.Message = fmt.Sprintf("Consulta concluída: %d tabelas e views.", len(x.catalog.tables))
+			x.job.Message = x.catalog.finish()
+			if catalog, ok := x.catalog.(*databaseCatalog); ok {
+				x.job.PartialResult = catalog.result.Warning != ""
+			}
 		}
 		n := 0
 		x.job.ExitCode = &n
@@ -340,10 +357,7 @@ func (m *Manager) run(ctx context.Context, x *execution, cmd core.Command) {
 		}
 	}
 	if x.catalog != nil {
-		x.catalog.names = nil
-		if x.job.Status != "succeeded" {
-			x.catalog.tables = nil
-		}
+		x.catalog.release(x.job.Status == "succeeded")
 	}
 	level := "info"
 	if x.job.Status == "failed" {

@@ -8,6 +8,7 @@ export const kinds: Record<JobKind, string> = {
   connection_test: "Teste de conexão",
   create_database: "Criar banco",
   table_list: "Consulta de tabelas",
+  database_list: "Consulta de bancos",
 };
 export const statuses: Record<JobStatus, string> = {
   running: "Em execução",
@@ -43,13 +44,15 @@ export function Button({
 export function Alert({
   children,
   success = false,
+  warning = false,
 }: {
   children: ReactNode;
   success?: boolean;
+  warning?: boolean;
 }) {
   return (
     <div
-      className={`alert ${success ? "success" : "error"}`}
+      className={`alert ${success ? "success" : warning ? "warning" : "error"}`}
       role={success ? "status" : "alert"}
     >
       {success ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
@@ -57,11 +60,20 @@ export function Alert({
     </div>
   );
 }
-export function Badge({ status }: { status: JobStatus }) {
+export function Badge({
+  status,
+  partial = false,
+  warnings = false,
+}: {
+  status: JobStatus;
+  partial?: boolean;
+  warnings?: boolean;
+}) {
+  const qualified = status === "succeeded" && (partial || warnings);
   return (
-    <span className={`badge ${status}`}>
+    <span className={`badge ${qualified ? "partial" : status}`}>
       {isActive(status) && <span className="status-dot" />}
-      {statuses[status]}
+      {qualified ? (partial ? "Parcial" : "Com alertas") : statuses[status]}
     </span>
   );
 }
@@ -93,7 +105,6 @@ export function PageHeader({
   return (
     <div className="page-header">
       <div>
-        <span className="eyebrow">{eyebrow}</span>
         <h1>{title}</h1>
         <p>{description}</p>
       </div>
@@ -152,10 +163,14 @@ export function Modal({
   title,
   children,
   onClose,
+  closeLabel = "Fechar janela",
+  className = "",
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
+  closeLabel?: string;
+  className?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -170,7 +185,7 @@ export function Modal({
   return (
     <dialog
       ref={ref}
-      className="modal"
+      className={`modal ${className}`}
       aria-labelledby={titleId}
       onCancel={(e) => {
         e.preventDefault();
@@ -182,7 +197,7 @@ export function Modal({
         <button
           className="icon-button"
           type="button"
-          aria-label="Fechar janela"
+          aria-label={closeLabel}
           onClick={onClose}
         >
           <X size={20} />

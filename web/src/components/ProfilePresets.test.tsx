@@ -32,6 +32,9 @@ describe("seleções nomeadas do perfil", () => {
     const user = userEvent.setup();
     render(<Profiles {...props} profiles={[profile]} />);
     await user.click(
+      screen.getByRole("button", { name: "Mais ações de Origem" }),
+    );
+    await user.click(
       screen.getByRole("button", { name: "Seleções de tabelas" }),
     );
     const modal = screen.getByRole("dialog", {
@@ -86,9 +89,13 @@ describe("seleções nomeadas do perfil", () => {
         ]}
       />,
     );
-    await userEvent
-      .setup()
-      .click(screen.getByRole("button", { name: "Seleções de tabelas" }));
+    const user = userEvent.setup();
+    await user.click(
+      screen.getByRole("button", { name: "Mais ações de Origem" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Seleções de tabelas" }),
+    );
     expect(screen.getByText("Persistida")).toBeInTheDocument();
     expect(screen.getByLabelText(/Banco de origem da seleção/)).toHaveValue(
       "origem",

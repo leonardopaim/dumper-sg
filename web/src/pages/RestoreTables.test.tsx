@@ -76,6 +76,33 @@ async function fill(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole("button", { name: /Selecionar tabelas/ }));
 }
 describe("seleção dos arquivos para restaurar", () => {
+  it("marca todos os arquivos inicialmente e usa o cabeçalho para selecionar o catálogo inteiro", async () => {
+    vi.spyOn(api, "backupTables").mockResolvedValue(rows);
+    const user = userEvent.setup();
+    render(<Restore {...props} profiles={[local, source]} />);
+    await fill(user);
+    await user.click(
+      screen.getByRole("radio", { name: "Seleção personalizada" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Consultar tabelas" }));
+    const all = await screen.findByRole("checkbox", {
+      name: "Marcar todas as tabelas do catálogo",
+    });
+    expect(all).toBeChecked();
+    await user.click(
+      screen.getByRole("checkbox", { name: "Incluir outro / cliente" }),
+    );
+    expect(all).toBePartiallyChecked();
+    await user.type(screen.getByLabelText("Buscar tabelas"), "logs");
+    await user.click(all);
+    await user.clear(screen.getByLabelText("Buscar tabelas"));
+    expect(
+      screen.getByRole("checkbox", { name: "Incluir outro / cliente" }),
+    ).toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: "Incluir origem / cliente" }),
+    ).toBeChecked();
+  });
   it("consulta arquivos, aplica preset da origem sem mudar destino e confirma nomes qualificados", async () => {
     const catalog = vi.spyOn(api, "backupTables").mockResolvedValue(rows);
     const sql = vi.spyOn(api, "tables");

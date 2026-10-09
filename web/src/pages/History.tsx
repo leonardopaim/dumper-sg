@@ -124,22 +124,18 @@ export function History({
                   >
                     <td>
                       <strong>{kinds[job.kind]}</strong>
-                      <small className="table-path" title={job.path}>
-                        {job.path || job.message || "—"}
-                      </small>
                     </td>
                     <td>
                       <strong>{job.profile_name}</strong>
                       <small>{job.database || "Conexão"}</small>
                     </td>
-                    <td className="nowrap">
-                      {dateTime(job.started_at)}
-                      {job.finished_at && (
-                        <small>Fim: {dateTime(job.finished_at)}</small>
-                      )}
-                    </td>
+                    <td className="nowrap">{dateTime(job.started_at)}</td>
                     <td>
-                      <Badge status={job.status} />
+                      <Badge
+                        status={job.status}
+                        partial={job.partial_result}
+                        warnings={!!job.warning_count}
+                      />
                     </td>
                     <td>
                       <button

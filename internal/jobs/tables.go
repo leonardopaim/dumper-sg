@@ -64,11 +64,26 @@ func (m *Manager) Tables(ctx context.Context, id string) ([]core.TableInfo, erro
 	if x.job.Status != "succeeded" {
 		return nil, fmt.Errorf("catálogo disponível somente após consulta bem-sucedida: %w", core.ErrConflict)
 	}
-	if x.catalog == nil {
+	catalog, ok := x.catalog.(*tableCatalog)
+	if !ok {
 		return nil, core.ErrNotFound
 	}
-	tables := make([]core.TableInfo, len(x.catalog.tables))
-	copy(tables, x.catalog.tables)
+	tables := make([]core.TableInfo, len(catalog.tables))
+	copy(tables, catalog.tables)
 	core.SortTables(tables)
 	return tables, nil
+}
+
+func (c *tableCatalog) failure() error { return c.err }
+
+func (c *tableCatalog) finish() string {
+	core.SortTables(c.tables)
+	return fmt.Sprintf("Consulta concluída: %d tabelas e views.", len(c.tables))
+}
+
+func (c *tableCatalog) release(success bool) {
+	c.names = nil
+	if !success {
+		c.tables = nil
+	}
 }

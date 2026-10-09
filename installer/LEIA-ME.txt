@@ -11,9 +11,14 @@ Esse download requer acesso à internet e pode levar alguns minutos; acompanhe o
 Cada pessoa cadastra seus próprios perfis. O instalador não contém credenciais ou backups.
 
 Fechar o navegador deixa a aplicação funcionando em segundo plano.
-Para sair, use "Encerrar DumperSG" no menu Iniciar. O encerramento é bloqueado durante operações.
+O ícone do DumperSG fica na bandeja junto ao relógio (pode estar na seta de ícones ocultos).
+Clique com o botão direito e escolha "Abrir DumperSG" ou "Encerrar DumperSG".
+O atalho "Encerrar DumperSG" no menu Iniciar também está disponível.
+O encerramento é bloqueado durante operações.
 Para reiniciar normalmente, use o botão Reiniciar na interface.
 Ao atualizar ou desinstalar, encerre a aplicação antes de executar o instalador.
+Para iniciar automaticamente, marque a opção correspondente no Setup.
+Use os atalhos instalados; não execute a cópia avulsa ou a tarefa antiga do projeto.
 
 Os dados ficam em %APPDATA%\DumperSG\web e são preservados ao atualizar ou desinstalar.
 Logs de inicialização: %APPDATA%\DumperSG\web\installed-launcher.

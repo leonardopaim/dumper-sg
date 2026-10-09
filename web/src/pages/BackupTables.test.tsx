@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Backup } from "./Backup";
 import { api } from "../api";
@@ -47,6 +47,123 @@ const props = {
 beforeEach(() => localStorage.clear());
 afterEach(() => vi.restoreAllMocks());
 describe("backup com seleção de tabelas", () => {
+  it("carrega todas marcadas ao escolher personalizada antes da consulta e oferece seleção global", async () => {
+    vi.spyOn(api, "tables").mockResolvedValue(rows);
+    const backup = vi.spyOn(api, "backup").mockResolvedValue(job);
+    const user = userEvent.setup();
+    render(<Backup {...props} profiles={[profile]} />);
+    await user.click(
+      screen.getByRole("button", { name: /Selecionar tabelas/ }),
+    );
+    await user.click(
+      screen.getByRole("radio", { name: "Seleção personalizada" }),
+    );
+    expect(
+      screen.getByRole("radio", { name: "Seleção personalizada" }),
+    ).toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Consultar tabelas" }));
+    const all = await screen.findByRole("checkbox", {
+      name: "Marcar todas as tabelas do catálogo",
+    });
+    await waitFor(() =>
+      expect(
+        JSON.parse(localStorage.getItem(tableSelectionKey(1, "origem"))!),
+      ).toEqual(["usuarios", "pequena", "view_resumo"]),
+    );
+    expect(all).toBeChecked();
+    for (const name of ["usuarios", "pequena", "view_resumo"])
+      expect(
+        screen.getByRole("checkbox", { name: `Incluir ${name}` }),
+      ).toBeChecked();
+    await user.click(screen.getByRole("checkbox", { name: "Incluir pequena" }));
+    expect(all).toBePartiallyChecked();
+    await user.type(screen.getByLabelText("Buscar tabelas"), "usuarios");
+    await user.click(all);
+    expect(all).toBeChecked();
+    expect(
+      JSON.parse(localStorage.getItem(tableSelectionKey(1, "origem"))!),
+    ).toEqual(["usuarios", "pequena", "view_resumo"]);
+    await user.click(all);
+    expect(
+      screen.getByRole("button", { name: "Iniciar backup" }),
+    ).toBeDisabled();
+    await user.click(all);
+    await user.click(screen.getByRole("button", { name: "Iniciar backup" }));
+    expect(backup).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tables: ["usuarios", "pequena", "view_resumo"],
+      }),
+    );
+  });
+
+  it("preserva a seleção salva quando consulta ou atualiza tabelas", async () => {
+    localStorage.setItem(tableSelectionKey(1, "origem"), '["pequena"]');
+    vi.spyOn(api, "tables").mockResolvedValue(rows);
+    const user = userEvent.setup();
+    render(<Backup {...props} profiles={[profile]} />);
+    await user.click(
+      screen.getByRole("button", { name: /Selecionar tabelas/ }),
+    );
+    await user.click(screen.getByRole("button", { name: "Consultar tabelas" }));
+    expect(
+      await screen.findByRole("checkbox", { name: "Incluir pequena" }),
+    ).toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: "Incluir usuarios" }),
+    ).not.toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Atualizar tabelas" }));
+    expect(
+      screen.getByRole("checkbox", { name: "Incluir usuarios" }),
+    ).not.toBeChecked();
+    expect(localStorage.getItem(tableSelectionKey(1, "origem"))).toBe(
+      '["pequena"]',
+    );
+  });
+
+  it("preserva um conjunto aplicado enquanto a primeira consulta personalizada está em andamento", async () => {
+    let finish!: (tables: TableInfo[]) => void;
+    vi.spyOn(api, "tables").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+    render(
+      <Backup
+        {...props}
+        profiles={[
+          {
+            ...profile,
+            table_presets: [
+              { name: "Essencial", database: "origem", tables: ["usuarios"] },
+            ],
+          },
+        ]}
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: /Selecionar tabelas/ }),
+    );
+    await user.click(
+      screen.getByRole("radio", { name: "Seleção personalizada" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Consultar tabelas" }));
+    await user.selectOptions(
+      screen.getByLabelText(/Usar seleção salva/),
+      "1:0",
+    );
+    finish(rows);
+    expect(
+      await screen.findByRole("checkbox", { name: "Incluir usuarios" }),
+    ).toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: "Incluir pequena" }),
+    ).not.toBeChecked();
+    expect(localStorage.getItem(tableSelectionKey(1, "origem"))).toBe(
+      '["usuarios"]',
+    );
+  });
   it("mantém todas como padrão sem consultar o banco", async () => {
     const tables = vi.spyOn(api, "tables");
     const backup = vi.spyOn(api, "backup").mockResolvedValue(job);

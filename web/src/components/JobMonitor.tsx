@@ -61,6 +61,24 @@ export function JobMonitor({ controller }: { controller: JobsController }) {
   const progress = Math.min(100, Math.max(0, job.progress));
   const indeterminate = active && progress === 0;
   const logPanelId = `job-logs-${job.id}`;
+  const resultTitle =
+    job.status === "failed"
+      ? "A operação falhou"
+      : job.status === "cancelled"
+        ? "Operação cancelada"
+        : job.partial_result
+          ? "Resultado parcial"
+          : job.warning_count
+            ? "Concluído com alertas"
+            : "Operação concluída";
+  const updates = events
+    .filter(
+      (event) =>
+        ["info", "warning", "warn", "error"].includes(
+          event.level.toLowerCase(),
+        ) && event.message !== job.message,
+    )
+    .slice(-3);
   return (
     <section
       id="job-monitor"
@@ -84,7 +102,11 @@ export function JobMonitor({ controller }: { controller: JobsController }) {
           </div>
         </div>
         <div className="inline-actions">
-          <Badge status={job.status} />
+          <Badge
+            status={job.status}
+            partial={job.partial_result}
+            warnings={!!job.warning_count}
+          />
           {(active || job.cleanup_required) && (
             <Button
               variant="danger"
@@ -109,36 +131,78 @@ export function JobMonitor({ controller }: { controller: JobsController }) {
           </Button>
         </div>
       </div>
-      <div className="monitor-progress">
+      {!active && (
         <div
-          className={`monitor-message ${job.status === "failed" ? "failed" : ""}`}
+          className={`operation-result ${job.status === "succeeded" ? (job.partial_result || job.warning_count ? "warning" : "success") : job.status === "failed" ? "error" : "cancelled"}`}
+          role="status"
+          aria-live="polite"
         >
-          <span>{job.message || "Aguardando eventos da operação…"}</span>
-          <strong>
-            {indeterminate
-              ? "Em andamento · sem estimativa"
-              : `${progress}% estimado`}
-            {job.exit_code !== undefined && (
-              <small> · saída {job.exit_code}</small>
-            )}
-          </strong>
+          <h3>{resultTitle}</h3>
+          <p>{job.message || "Consulte os detalhes da operação."}</p>
+          {job.warning_message && <p>{job.warning_message}</p>}
+          {job.partial_result && (
+            <p>
+              A lista de bancos foi obtida, mas parte das informações de grupos
+              ou empresas não pôde ser consultada.
+            </p>
+          )}
+          {job.status === "failed" && (
+            <p>
+              Confira a causa acima antes de tentar novamente. Alterações ou
+              arquivos já produzidos podem permanecer.
+            </p>
+          )}
+          {job.status === "cancelled" && (
+            <p>
+              O cancelamento não desfaz alterações ou arquivos já produzidos.
+            </p>
+          )}
         </div>
-        <div
-          className={`progress-track ${indeterminate ? "indeterminate" : ""}`}
-          role="progressbar"
-          aria-valuenow={indeterminate ? undefined : progress}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-label={`Progresso estimado de ${kinds[job.kind]}`}
-          aria-valuetext={
-            indeterminate
-              ? "Em andamento, sem estimativa"
-              : `${progress}% estimado`
-          }
-        >
-          <span style={indeterminate ? undefined : { width: `${progress}%` }} />
+      )}
+      {active && (
+        <div className="monitor-progress">
+          <div
+            className={`monitor-message ${job.status === "failed" ? "failed" : ""}`}
+          >
+            <span>{job.message || "Aguardando eventos da operação…"}</span>
+            <strong>
+              {indeterminate
+                ? "Em andamento · sem estimativa"
+                : `${progress}% estimado`}
+              {job.exit_code !== undefined && (
+                <small> · saída {job.exit_code}</small>
+              )}
+            </strong>
+          </div>
+          <div
+            className={`progress-track ${indeterminate ? "indeterminate" : ""}`}
+            role="progressbar"
+            aria-valuenow={indeterminate ? undefined : progress}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label={`Progresso estimado de ${kinds[job.kind]}`}
+            aria-valuetext={
+              indeterminate
+                ? "Em andamento, sem estimativa"
+                : `${progress}% estimado`
+            }
+          >
+            <span
+              style={indeterminate ? undefined : { width: `${progress}%` }}
+            />
+          </div>
         </div>
-      </div>
+      )}
+      {active && !expanded && updates.length > 0 && (
+        <ol className="operation-updates" aria-label="Últimos acontecimentos">
+          {updates.map((event) => (
+            <li key={event.sequence}>
+              <time>{new Date(event.time).toLocaleTimeString("pt-BR")}</time>{" "}
+              {event.message}
+            </li>
+          ))}
+        </ol>
+      )}
       {job.path && (
         <div className="monitor-path">
           <span>Caminho</span>

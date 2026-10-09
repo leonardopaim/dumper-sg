@@ -491,3 +491,35 @@ func TestOrdinaryFailureReleasesCapacity(t *testing.T) {
 	}
 	waitFinal(t, m, second.ID)
 }
+
+func TestUnsafeProductionBackupNeverStarts(t *testing.T) {
+	repo := newRepo()
+	repo.profile.Host = "db.sommusgestor.com"
+	called := false
+	manager := New(repo, executorFunc(func(context.Context, core.Command, func(string, string)) error { called = true; return nil }), core.Config{BackupDir: t.TempDir()})
+	for _, threads := range []int{0, 3, 8} {
+		if _, err := manager.StartBackup(context.Background(), core.BackupRequest{ProfileID: 1, Threads: threads}); err == nil || !strings.Contains(err.Error(), "Cada thread aumenta") {
+			t.Fatalf("invalid limit response: %v", err)
+		}
+	}
+	if called || len(repo.jobs) != 0 {
+		t.Fatal("unsafe backup reached executor or history")
+	}
+}
+
+func TestWarningsPersistWithSuccessfulResult(t *testing.T) {
+	repo := newRepo()
+	manager := New(repo, executorFunc(func(_ context.Context, _ core.Command, emit func(string, string)) error {
+		emit("warning", "Aviso top-secret")
+		return nil
+	}), core.Config{LogDir: t.TempDir()})
+	job, err := manager.StartTest(context.Background(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	final := waitFinal(t, manager, job.ID)
+	saved, err := repo.GetJob(context.Background(), job.ID)
+	if err != nil || final.Status != "succeeded" || saved.WarningCount != 1 || saved.WarningMessage != "Aviso ***" || saved.PartialResult {
+		t.Fatalf("invalid persisted result: %+v %v", saved, err)
+	}
+}

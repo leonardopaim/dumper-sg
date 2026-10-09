@@ -1,5 +1,7 @@
 # Inicialização automática e Nginx
 
+Este guia documenta a execução avulsa anterior e o proxy opcional para desenvolvimento. Para uso normal, utilize o [instalador](distribuicao.md) e marque sua opção de inicialização automática. Não instale esta tarefa junto da aplicação instalada: as duas cópias disputam a porta 8787.
+
 ## Como funciona nesta máquina
 
 O DumperSG inicia **ao entrar na sua conta do Windows**, por uma tarefa no Agendador de Tarefas. A tarefa roda com permissões normais, sem armazenar senha e sem abrir janela. Mantém o processo Go em execução, permite apenas uma instância da tarefa e tenta reiniciá-lo até três vezes, com intervalo de um minuto, se ele falhar. Não há limite de duração nem encerramento ao usar bateria.
@@ -25,7 +27,7 @@ Sem `-StartNow`, a tarefa começa no próximo login. Novas instalações usam `-
 
 A tarefa tem nome `DumperSG-<SID da conta>`. A configuração fica em `data\autostart-<SID>.json` no projeto, sem credenciais de banco. Mantenha o projeto e o executável nesse caminho; reinstale a tarefa se mover a pasta. Logs da inicialização ficam em `<diretório de dados>\startup\stdout.log` e `stderr.log`, com uma cópia `.previous` da execução anterior. Os logs dos backups/restores continuam em `logs`.
 
-Para atualizar o executável, conclua os jobs, saia da aplicação e então compile. Não substitua um executável em execução. Se precisar encerrar a cópia automática, use o Agendador de Tarefas para finalizar a tarefa e confira se `dumpersg.exe` encerrou; evite esse procedimento durante backup/restore. Ao reiniciar, o core verifica containers de operações interrompidas antes de liberar novas operações.
+Para atualizar o executável, conclua os jobs, saia da aplicação e então compile. Não substitua um executável em execução. Para encerrar a cópia automática, clique com o botão direito no ícone do DumperSG junto ao relógio (ou na seta de ícones ocultos) e escolha **Encerrar DumperSG**. O encerramento é recusado durante operações ativas e não cancela o job. O launcher termina normalmente e não reinicia a aplicação após essa saída; ela volta no próximo login ou quando for iniciada manualmente. Ao reiniciar, o core verifica containers de operações interrompidas antes de liberar novas operações.
 
 ## Reiniciar sem encerrar processos manualmente
 
