@@ -70,6 +70,17 @@ func (r *memoryRepo) ListJobs(_ context.Context, limit int) ([]core.Job, error) 
 	return result, nil
 }
 
+func (r *memoryRepo) BackupJobs(ctx context.Context) ([]core.Job, error) {
+	jobs, err := r.ListJobs(ctx, 0)
+	result := []core.Job{}
+	for _, job := range jobs {
+		if job.Kind == "backup" {
+			result = append(result, job)
+		}
+	}
+	return result, err
+}
+
 func (r *memoryRepo) PendingJobs(context.Context) ([]core.Job, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

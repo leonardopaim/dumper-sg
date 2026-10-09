@@ -10,6 +10,89 @@
   --border: #e4e9f0;
   --nav: #111a2b;
 }
+.backup-library-toolbar {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 180px auto;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px 0;
+}
+.backup-library-summary {
+  display: grid;
+  gap: 3px;
+  padding-bottom: 10px;
+  font-size: 12px;
+}
+.backup-library-summary small,
+.backup-library-hint {
+  color: var(--muted);
+  font-size: 11px;
+}
+.backup-library-hint {
+  padding: 0 20px 12px;
+}
+.backup-library table td:first-child {
+  max-width: 380px;
+}
+.backup-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.backup-actions,
+.backup-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.backup-actions .icon-button {
+  flex-shrink: 0;
+}
+.backup-actions .danger-icon {
+  color: #dc3545;
+}
+.backup-details {
+  display: grid;
+  gap: 14px;
+}
+.backup-details .modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.backup-details > strong {
+  overflow-wrap: anywhere;
+}
+.backup-details code {
+  padding: 10px;
+  border: 1px solid var(--border);
+  background: #f8faff;
+  border-radius: 7px;
+  font-size: 12px;
+}
+.backup-detail-actions {
+  flex-wrap: wrap;
+}
+.backup-tables {
+  max-height: 300px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+@media (max-width: 800px) {
+  .backup-library-toolbar {
+    grid-template-columns: minmax(0, 1fr) 160px;
+  }
+  .backup-library-summary {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 480px) {
+  .backup-library-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 * {
   box-sizing: border-box;
 }
@@ -994,6 +1077,67 @@ svg {
 }
 .field input::placeholder {
   color: #a4aebd;
+}
+/* Style the native picker as well as the field in supporting browsers. */
+@supports (appearance: base-select) {
+  .field select,
+  .field select::picker(select) {
+    appearance: base-select;
+  }
+  .field select {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .field select::picker(select) {
+    border: 1px solid #dce3ec;
+    border-radius: 9px;
+    background: #fff;
+    color: #42536d;
+    padding: 5px;
+    box-shadow: 0 10px 30px #1c293b1a;
+    margin-block: 5px;
+    max-height: min(320px, 60vh);
+    overflow: auto;
+    font-size: 12px;
+  }
+  .field select::picker-icon {
+    color: #7a8597;
+    margin-left: auto;
+    flex-shrink: 0;
+    transition: rotate 0.15s;
+  }
+  .field select:open::picker-icon {
+    rotate: 180deg;
+  }
+  .field select option {
+    border: 0;
+    border-radius: 5px;
+    padding: 8px 10px;
+    min-height: 32px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+  }
+  .field select option:hover,
+  .field select option:focus {
+    background: #edf2ff;
+    color: #315de9;
+  }
+  .field select option:checked {
+    background: #edf2ff;
+    font-weight: 600;
+  }
+  .field select option::checkmark {
+    color: #315de9;
+  }
+  .field select optgroup > label {
+    color: #7a8597;
+    font-size: 11px;
+    padding: 6px 10px;
+  }
 }
 .field input:hover,
 .field select:hover {

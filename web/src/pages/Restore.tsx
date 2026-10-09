@@ -27,6 +27,8 @@ export function Restore({
   onJob,
   active,
   onProfiles,
+  initialBackup,
+  onBackupApplied,
 }: {
   profiles: Profile[];
   backups: BackupEntry[];
@@ -34,6 +36,8 @@ export function Restore({
   onJob: (job: Job) => void;
   active: boolean;
   onProfiles: () => void;
+  initialBackup?: string;
+  onBackupApplied?: () => void;
 }) {
   const [form, setForm] = useOperationDraft<RestoreInput>(
     restoreDraftKey,
@@ -47,6 +51,16 @@ export function Restore({
     transientFields,
   );
   const backupInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (initialBackup) {
+      setForm((data) => ({
+        ...data,
+        backup_dir: initialBackup,
+        overwrite_tables: false,
+      }));
+      onBackupApplied?.();
+    }
+  }, [initialBackup]);
   const restoreTables = useRestoreTables(form.profile_id, form.backup_dir);
   const emptySelection = restoreTables.selection?.length === 0;
   const [busy, setBusy] = useState(false);
@@ -168,7 +182,10 @@ export function Restore({
                   <p>Use o catálogo ou informe uma pasta local.</p>
                 </div>
               </div>
-              <Field label="Backups no diretório padrão">
+              <Field
+                label="Backup do catálogo"
+                hint="Inclui destinos personalizados registrados no histórico. Gerencie arquivos em Meus backups."
+              >
                 <select
                   value={
                     backups.some((item) => item.path === form.backup_dir)
@@ -183,8 +200,13 @@ export function Restore({
                       : "Nenhum backup encontrado no catálogo"}
                   </option>
                   {backups.map((item) => (
-                    <option key={item.path} value={item.path}>
+                    <option
+                      key={item.path}
+                      value={item.path}
+                      disabled={item.complete === false}
+                    >
                       {item.name} · {dateTime(item.modified_at)}
+                      {item.complete === false ? " · Incompleto" : ""}
                     </option>
                   ))}
                 </select>

@@ -39,9 +39,14 @@ export interface JobEvent {
   message: string;
 }
 export interface BackupEntry {
+  id?: string;
   path: string;
   name: string;
   modified_at: string;
+  size_bytes?: number;
+  file_count?: number;
+  complete?: boolean;
+  problem?: string;
 }
 export interface Diagnostics {
   available: boolean;

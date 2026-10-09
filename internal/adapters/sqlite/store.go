@@ -395,6 +395,24 @@ func (s *Store) ListJobs(ctx context.Context, limit int) ([]core.Job, error) {
 	return jobs, rows.Err()
 }
 
+// BackupJobs includes older backup locations outside the paginated history.
+func (s *Store) BackupJobs(ctx context.Context) ([]core.Job, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT payload FROM jobs WHERE json_extract(payload, '$.kind')='backup' ORDER BY started_at DESC, id DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := []core.Job{}
+	for rows.Next() {
+		job, err := scanJob(rows)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, job)
+	}
+	return result, rows.Err()
+}
+
 // PendingJobs returns every job whose external termination still needs to be
 // verified, including jobs older than the paginated history window.
 func (s *Store) PendingJobs(ctx context.Context) ([]core.Job, error) {

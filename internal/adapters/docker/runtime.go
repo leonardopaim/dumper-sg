@@ -107,7 +107,9 @@ func (e *Executor) hostCommand(ctx context.Context, program string, args ...stri
 	if e.processFactory != nil {
 		return e.processFactory(ctx, program, args...)
 	}
-	return exec.CommandContext(ctx, program, args...)
+	process := exec.CommandContext(ctx, program, args...)
+	hideConsole(process)
+	return process
 }
 
 func (e *Executor) invokeHost(ctx context.Context, program string, args ...string) (string, error) {

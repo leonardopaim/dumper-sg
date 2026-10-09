@@ -113,6 +113,7 @@ type Command struct {
 	// StdoutData routes structured output to the collector; never to job logs.
 	StdoutData     bool
 	Program        string
+	Image          string
 	Args           []string
 	Secrets        []string
 	ContainerName  string
@@ -140,6 +141,7 @@ type Repository interface {
 	SaveJob(context.Context, Job) error
 	GetJob(context.Context, string) (Job, error)
 	ListJobs(context.Context, int) ([]Job, error)
+	BackupJobs(context.Context) ([]Job, error)
 	PendingJobs(context.Context) ([]Job, error)
 }
 type Executor interface {

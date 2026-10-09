@@ -2,6 +2,12 @@
 
 Aplicação web local para criar e restaurar backups MySQL, com perfis de conexão, histórico e logs opcionais. Usa Go, React e Docker (Desktop ou Engine no WSL).
 
+## Instalar e compartilhar com o time
+
+Compartilhe `dist\releases\DumperSG-Setup-1.0.0-windows-x64.exe`. A pessoa instala, abre o atalho **DumperSG** e cadastra seus perfis. O navegador abre automaticamente. Requer Docker disponível; as imagens são baixadas no primeiro uso. Não exige Go, Node.js, Nginx ou código-fonte.
+
+Para gerar um novo instalador: `.\scripts\build-installer.ps1 -Version 1.0.0`. Somente quem compila precisa de Go, Node.js e Inno Setup 6. Veja o [guia de distribuição](docs/distribuicao.md).
+
 ## Executar
 
 Com o executável já compilado:

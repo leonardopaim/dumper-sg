@@ -96,7 +96,7 @@ func baseCommand(p Profile, cfg Config, id, mount, image string) Command {
 		args = append(args, "-v", mount+":/backup")
 	}
 	args = append(args, image)
-	return Command{Program: "docker", Args: args, Secrets: []string{p.Password}, ContainerName: "dumpersg-" + id}
+	return Command{Program: "docker", Image: image, Args: args, Secrets: []string{p.Password}, ContainerName: "dumpersg-" + id}
 }
 
 func connectionArgs(p Profile) []string {

@@ -37,6 +37,42 @@ const props = {
 };
 describe("restauração", () => {
   beforeEach(() => localStorage.clear());
+  it("recebe a origem da gestão de backups sem substituir o destino e persiste a escolha", () => {
+    localStorage.setItem(
+      restoreDraftKey,
+      JSON.stringify({
+        profile_id: 1,
+        backup_dir: "anterior",
+        target_database: "meu_destino",
+        threads: 4,
+        overwrite_tables: true,
+      }),
+    );
+    const applied = vi.fn();
+    const view = render(
+      <Restore
+        {...props}
+        profiles={[profile]}
+        initialBackup={"C:\\backup_escolhido"}
+        onBackupApplied={applied}
+      />,
+    );
+    expect(screen.getByLabelText(/Diretório do backup/)).toHaveValue(
+      "C:\\backup_escolhido",
+    );
+    expect(screen.getByLabelText(/Banco isolado de destino/)).toHaveValue(
+      "meu_destino",
+    );
+    expect(
+      screen.getByRole("checkbox", { name: /Sobrescrever tabelas/ }),
+    ).not.toBeChecked();
+    expect(applied).toHaveBeenCalledOnce();
+    view.unmount();
+    render(<Restore {...props} profiles={[profile]} />);
+    expect(screen.getByLabelText(/Diretório do backup/)).toHaveValue(
+      "C:\\backup_escolhido",
+    );
+  });
   it("recupera o perfil e os campos ao voltar à tela, mantendo sobrescrita desmarcada", async () => {
     const profiles = [profile, { ...profile, id: 2, name: "Outro local" }];
     const user = userEvent.setup();

@@ -1,0 +1,23 @@
+DumperSG - instalação e uso
+
+1. Tenha o Docker Desktop com containers Linux OU o Docker Engine no WSL disponível.
+2. Instale o DumperSG e abra pelo atalho no menu Iniciar ou na área de trabalho.
+3. O navegador abre automaticamente em http://127.0.0.1:8787.
+4. Cadastre seus perfis de banco e use os módulos de backup e restauração.
+
+Não precisa instalar Go, Node.js, Nginx ou modificar código.
+No primeiro uso, as imagens MyDumper e MySQL são baixadas automaticamente.
+Esse download requer acesso à internet e pode levar alguns minutos; acompanhe o painel de operações.
+Cada pessoa cadastra seus próprios perfis. O instalador não contém credenciais ou backups.
+
+Fechar o navegador deixa a aplicação funcionando em segundo plano.
+Para sair, use "Encerrar DumperSG" no menu Iniciar. O encerramento é bloqueado durante operações.
+Para reiniciar normalmente, use o botão Reiniciar na interface.
+Ao atualizar ou desinstalar, encerre a aplicação antes de executar o instalador.
+
+Os dados ficam em %APPDATA%\DumperSG\web e são preservados ao atualizar ou desinstalar.
+Logs de inicialização: %APPDATA%\DumperSG\web\installed-launcher.
+Se já existe outra cópia do DumperSG na porta 8787, o atalho abre essa cópia.
+
+Instalação por usuário para Windows 10/11 de 64 bits. A preparação do Docker pode exigir
+permissões administrativas conforme a política da sua máquina.

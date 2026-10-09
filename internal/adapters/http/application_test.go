@@ -63,3 +63,25 @@ func TestApplicationRestartSecurityAndCapabilities(t *testing.T) {
 		t.Fatal("instance id did not change")
 	}
 }
+
+func TestApplicationShutdownIsOptInAuthenticatedAndIdle(t *testing.T) {
+	s, _ := fixture(t)
+	if w := request(s, "POST", "/api/v1/application/shutdown", "{}", ""); w.Code != 403 {
+		t.Fatalf("no session: %d", w.Code)
+	}
+	if w := request(s, "POST", "/api/v1/application/shutdown", "{}", s.token); w.Code != 501 {
+		t.Fatalf("disabled: %d", w.Code)
+	}
+	called := 0
+	s.options.Shutdown = func(context.Context) error { called++; return nil }
+	if w := request(s, "POST", "/api/v1/application/shutdown", `{"command":"anything"}`, s.token); w.Code != 400 || called != 0 {
+		t.Fatal("arbitrary body accepted")
+	}
+	if w := request(s, "POST", "/api/v1/application/shutdown", "{}", s.token); w.Code != 202 || called != 1 {
+		t.Fatalf("shutdown: %d %s", w.Code, w.Body)
+	}
+	s.options.Shutdown = func(context.Context) error { return core.ErrConflict }
+	if w := request(s, "POST", "/api/v1/application/shutdown", "{}", s.token); w.Code != 409 {
+		t.Fatalf("active: %d", w.Code)
+	}
+}

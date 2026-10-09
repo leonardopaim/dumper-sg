@@ -112,6 +112,10 @@ export const api = {
   cancel: (id: string) =>
     request<Job>(`/jobs/${encodeURIComponent(id)}/cancel`, "POST"),
   backups: () => request<BackupEntry[]>("/backups"),
+  deleteBackup: (id: string) =>
+    request<void>(`/backups/${encodeURIComponent(id)}`, "DELETE"),
+  openBackup: (id: string) =>
+    request<void>(`/backups/${encodeURIComponent(id)}/open`, "POST"),
   settings: () => request<Settings>("/settings"),
   saveSettings: (data: Settings) =>
     request<Settings>("/settings", "PATCH", data),

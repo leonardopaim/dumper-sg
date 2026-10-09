@@ -113,6 +113,14 @@ Remove-Item Env:DUMPERSG_TEST_WSL_INTEGRATION
 
 A integração cria um MySQL descartável, testa conexão/criação de banco/backup/restore, rejeita tabelas existentes sem sobrescrita, valida a sobrescrita explícita e os níveis dos logs, compara os dados restaurados e remove seu container/volumes próprios. Também confere catálogo por tamanho, views, banco inexistente e backups seletivos com nomes especiais e regex cumulativa, seleções persistidas no perfil, catálogo de arquivos e restauração parcial que preserva tabelas desmarcadas. Os artefatos ficam em `data/integration-wsl-*` (ignorados pelo Git). O teste Go adicional verifica cancelamento com Alpine descartável. Ambos foram aprovados no Ubuntu WSL desta máquina.
 
+## Gestão dos arquivos de backup
+
+Em **Meus backups**, consulte tamanho e quantidade de arquivos, busque por nome/caminho e ordene por data ou tamanho. **Ver detalhes** lista tabelas e views de backups finalizados; **Abrir pasta** acessa os arquivos no computador onde o core está executando. **Restaurar** preenche a origem no formulário sem iniciar a operação.
+
+O catálogo inclui o diretório padrão e pastas personalizadas registradas nas operações de backup, incluindo backups incompletos. **Excluir** pede confirmação e remove permanentemente a pasta inteira; o histórico é preservado. A exclusão fica bloqueada durante operações ou pendências de término de containers. Links e junctions não são seguidos para calcular tamanho ou excluir arquivos.
+
+Os menus de seleção usam opções com bordas arredondadas nos navegadores compatíveis com selects personalizáveis (por exemplo, Chrome/Edge atuais). Navegadores sem suporte mantêm o controle nativo. Referência: [selects personalizáveis no navegador](https://developer.mozilla.org/en-US/docs/Learn_web_development/Extensions/Forms/Customizable_select).
+
 ## Campos lembrados na interface
 
 Os perfis cadastrados e o diretório padrão são persistidos no SQLite da aplicação. Os formulários de backup e restauração lembram separadamente o último perfil e os valores preenchidos no navegador, incluindo pasta, banco e threads. A seleção é recuperada por ID mesmo se a lista de perfis mudar de ordem; se o perfil for removido, um perfil disponível é selecionado e o destino de restauração é limpo. A opção de sobrescrever tabelas não é memorizada.

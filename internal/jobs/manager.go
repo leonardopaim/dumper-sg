@@ -125,6 +125,8 @@ func (m *Manager) StartBackup(ctx context.Context, req core.BackupRequest) (core
 }
 
 func (m *Manager) StartRestore(ctx context.Context, req core.RestoreRequest) (core.Job, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	p, id, err := m.profile(ctx, req.ProfileID)
 	if err != nil {
 		return core.Job{}, err
@@ -133,7 +135,7 @@ func (m *Manager) StartRestore(ctx context.Context, req core.RestoreRequest) (co
 	if err != nil {
 		return core.Job{}, err
 	}
-	return m.start(ctx, p, cmd, core.Job{ID: id, Kind: "restore", Database: req.TargetDatabase, Path: path})
+	return m.startCollectedLocked(ctx, p, cmd, core.Job{ID: id, Kind: "restore", Database: req.TargetDatabase, Path: path}, nil)
 }
 
 func (m *Manager) StartTest(ctx context.Context, profileID int64) (core.Job, error) {
@@ -167,6 +169,10 @@ func (m *Manager) start(ctx context.Context, p core.Profile, cmd core.Command, j
 func (m *Manager) startCollected(ctx context.Context, p core.Profile, cmd core.Command, job core.Job, catalog *tableCatalog) (core.Job, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.startCollectedLocked(ctx, p, cmd, job, catalog)
+}
+
+func (m *Manager) startCollectedLocked(ctx context.Context, p core.Profile, cmd core.Command, job core.Job, catalog *tableCatalog) (core.Job, error) {
 	if m.initErr != nil {
 		return core.Job{}, m.initErr
 	}
@@ -284,6 +290,12 @@ func (m *Manager) run(ctx context.Context, x *execution, cmd core.Command) {
 					x.catalog.consume(text)
 				}
 			} else {
+				if strings.HasPrefix(text, "Primeiro uso: baixando imagem ") || strings.HasPrefix(text, "Imagem disponível: ") {
+					x.job.Message = text
+					if err := m.save(x.job); err != nil {
+						m.eventLocked(x, "error", "Falha ao salvar preparação: "+err.Error())
+					}
+				}
 				m.eventLocked(x, level, text)
 			}
 		}
@@ -472,6 +484,29 @@ func (m *Manager) Cancel(ctx context.Context, id string) (core.Job, error) {
 	}
 	m.mu.Unlock()
 	return m.Get(ctx, id)
+}
+
+// WithIdleMaintenance serializes filesystem maintenance with operation creation.
+// Unconfirmed containers may still have a backup mounted, so they also block it.
+func (m *Manager) WithIdleMaintenance(ctx context.Context, action func() error) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if m.initErr != nil {
+		return m.initErr
+	}
+	if m.closed {
+		return fmt.Errorf("aplicação encerrando ou reiniciando: %w", core.ErrConflict)
+	}
+	if m.active != nil {
+		return fmt.Errorf("aguarde a operação em execução antes de excluir backups: %w", core.ErrConflict)
+	}
+	if err := m.reconcileLocked(ctx); err != nil {
+		return fmt.Errorf("exclusão bloqueada: %v: %w", err, core.ErrConflict)
+	}
+	return action()
 }
 
 // Reserve shutdown under the same lock as job creation: no new operation may

@@ -83,6 +83,11 @@ func (e *Executor) Run(ctx context.Context, command core.Command, output func(st
 	if err := e.verifyIdentity(ctx, command.DockerIdentity); err != nil {
 		return err
 	}
+	if command.Image != "" {
+		if err := e.ensureImage(ctx, command.Image, output); err != nil {
+			return err
+		}
+	}
 	var err error
 	createArgs = e.desktopNetworking(createArgs)
 	createArgs, err = e.translateMounts(ctx, createArgs)

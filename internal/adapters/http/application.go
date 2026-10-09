@@ -23,3 +23,20 @@ func (s *Server) restart(w http.ResponseWriter, r *http.Request) {
 	// Shutdown drains this HTTP response before the process exits.
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "restarting", "instance_id": s.instance})
 }
+
+func (s *Server) shutdown(w http.ResponseWriter, r *http.Request) {
+	if s.options.Shutdown == nil {
+		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "Encerramento disponível na aplicação instalada."})
+		return
+	}
+	var body struct{}
+	if err := decode(w, r, &body); err != nil {
+		fail(w, err)
+		return
+	}
+	if err := s.options.Shutdown(r.Context()); err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "stopping", "instance_id": s.instance})
+}

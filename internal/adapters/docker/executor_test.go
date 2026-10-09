@@ -197,6 +197,21 @@ func TestDockerHelperProcess(t *testing.T) {
 	trace.Close()
 	state := filepath.Join(dir, "state")
 	switch args[0] {
+	case "image":
+		if mode == "image-cached" {
+			fmt.Println("sha256:cached")
+			break
+		}
+		os.Exit(1)
+	case "pull":
+		os.WriteFile(filepath.Join(dir, "pulling"), []byte("ready"), 0600)
+		if mode == "pull-wait" {
+			time.Sleep(10 * time.Second)
+		}
+		if mode == "pull-fail" {
+			os.Exit(7)
+		}
+		fmt.Println("Download complete")
 	case "create":
 		if len(args) < 5 || args[1] != "--label" || strings.Contains(strings.Join(args, "\n"), "\n--rm\n") {
 			os.Exit(3)

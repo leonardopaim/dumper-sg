@@ -20,6 +20,7 @@ import { useJobs } from "./hooks/useJobs";
 import { Dashboard } from "./pages/Dashboard";
 import { Profiles } from "./pages/Profiles";
 import { Backup } from "./pages/Backup";
+import { Backups } from "./pages/Backups";
 import { Restore } from "./pages/Restore";
 import { History } from "./pages/History";
 import { Settings } from "./pages/Settings";
@@ -34,6 +35,7 @@ const mainNavigation = [
   { id: "dashboard", label: "Visão geral", icon: LayoutDashboard },
   { id: "backup", label: "Criar backup", icon: Archive },
   { id: "restore", label: "Restaurar", icon: RotateCcw },
+  { id: "backups", label: "Meus backups", icon: HardDriveDownload },
   { id: "history", label: "Histórico", icon: HistoryIcon },
 ];
 const managementNavigation = [
@@ -62,6 +64,7 @@ export function App() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [settings, setSettings] = useState<SettingsMap>({});
   const [backups, setBackups] = useState<BackupEntry[]>([]);
+  const [restorePath, setRestorePath] = useState<string>();
   const [history, setHistory] = useState<Job[]>([]);
   const [diagnostics, setDiagnostics] = useState<Diagnostics>();
   const [version, setVersion] = useState("");
@@ -358,12 +361,25 @@ export function App() {
               )}
               {page === "restore" && (
                 <Restore
+                  initialBackup={restorePath}
+                  onBackupApplied={() => setRestorePath(undefined)}
                   profiles={profiles}
                   backups={backups}
                   reloadBackups={reloadBackups}
                   onJob={onJob}
                   active={!!activeJob}
                   onProfiles={() => navigate("profiles")}
+                />
+              )}
+              {page === "backups" && (
+                <Backups
+                  backups={backups}
+                  reload={reloadBackups}
+                  active={!!activeJob}
+                  onRestore={(path) => {
+                    setRestorePath(path);
+                    navigate("restore");
+                  }}
                 />
               )}
               {page === "history" && (

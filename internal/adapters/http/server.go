@@ -36,13 +36,16 @@ type Importer interface {
 	ImportLegacy(context.Context, string) (store.ImportResult, error)
 }
 type Options struct {
-	AllowedHosts   []string
-	AllowedOrigins []string
-	Assets         fs.FS
-	BackupDir      string
-	Diagnostics    func(context.Context) core.Diagnostics
-	Importer       Importer
-	Restart        func(context.Context) error
+	AllowedHosts     []string
+	AllowedOrigins   []string
+	Assets           fs.FS
+	BackupDir        string
+	Diagnostics      func(context.Context) core.Diagnostics
+	Importer         Importer
+	Restart          func(context.Context) error
+	Shutdown         func(context.Context) error
+	InstanceID       string
+	OpenBackupFolder func(string) error
 }
 type Server struct {
 	repo     core.Repository
@@ -59,6 +62,12 @@ func New(repo core.Repository, ops Operations, options Options) (*Server, error)
 		return nil, err
 	}
 	s := &Server{repo: repo, ops: ops, options: options, token: hex.EncodeToString(secret[:32]), instance: hex.EncodeToString(secret[32:])}
+	if options.InstanceID != "" {
+		if len(options.InstanceID) != 32 || strings.Trim(options.InstanceID, "0123456789abcdef") != "" {
+			return nil, errors.New("identificação da instância inválida")
+		}
+		s.instance = options.InstanceID
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/session", s.session)
 	mux.HandleFunc("GET /api/v1/health", func(w http.ResponseWriter, r *http.Request) {
@@ -67,6 +76,7 @@ func New(repo core.Repository, ops Operations, options Options) (*Server, error)
 	mux.HandleFunc("GET /api/v1/diagnostics", s.diagnostics)
 	mux.HandleFunc("GET /api/v1/application", s.application)
 	mux.HandleFunc("POST /api/v1/application/restart", s.restart)
+	mux.HandleFunc("POST /api/v1/application/shutdown", s.shutdown)
 	mux.HandleFunc("GET /api/v1/profiles", s.profiles)
 	mux.HandleFunc("POST /api/v1/profiles", s.createProfile)
 	mux.HandleFunc("GET /api/v1/profiles/{id}", s.profile)
@@ -77,6 +87,8 @@ func New(repo core.Repository, ops Operations, options Options) (*Server, error)
 	mux.HandleFunc("POST /api/v1/backups/tables", s.backupTables)
 	mux.HandleFunc("POST /api/v1/tables", s.listTables)
 	mux.HandleFunc("GET /api/v1/backups", s.backups)
+	mux.HandleFunc("DELETE /api/v1/backups/{id}", s.deleteBackup)
+	mux.HandleFunc("POST /api/v1/backups/{id}/open", s.openBackup)
 	mux.HandleFunc("POST /api/v1/restores", s.restore)
 	mux.HandleFunc("POST /api/v1/databases", s.database)
 	mux.HandleFunc("GET /api/v1/jobs", s.history)
@@ -481,38 +493,10 @@ func (s *Server) updateSettings(w http.ResponseWriter, r *http.Request) {
 	s.settings(w, r)
 }
 func (s *Server) backups(w http.ResponseWriter, r *http.Request) {
-	settings, err := s.repo.GetSettings(r.Context())
+	out, err := s.backupCatalog(r.Context())
 	if err != nil {
 		fail(w, err)
 		return
-	}
-	base := settings["default_backup_dir"]
-	if base == "" {
-		base = s.options.BackupDir
-	}
-	type entry struct {
-		Path       string `json:"path"`
-		Name       string `json:"name"`
-		ModifiedAt string `json:"modified_at"`
-	}
-	out := []entry{}
-	entries, err := os.ReadDir(base)
-	if err != nil {
-		fail(w, err)
-		return
-	}
-	for _, e := range entries {
-		if !e.IsDir() || e.Type()&os.ModeSymlink != 0 {
-			continue
-		}
-		path := filepath.Join(base, e.Name())
-		if _, err = os.Stat(filepath.Join(path, "metadata")); err != nil {
-			continue
-		}
-		info, err := e.Info()
-		if err == nil {
-			out = append(out, entry{path, e.Name(), info.ModTime().UTC().Format(time.RFC3339)})
-		}
 	}
 	writeJSON(w, 200, out)
 }
