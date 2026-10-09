@@ -16,7 +16,7 @@ O instalador oferece atalhos e uma opção para iniciar em segundo plano ao entr
 
 ## Atualização e desinstalação
 
-Encerre a aplicação pela bandeja ou pelo atalho e execute o novo instalador. Perfis, histórico, configurações, backups e logs permanecem em `%APPDATA%\DumperSG\web`; a desinstalação também preserva esses dados. O instalador não fecha processos automaticamente nem interrompe operações. Uma cópia instalada em execução bloqueia instalação e desinstalação.
+Execute o novo instalador e mantenha a pasta da instalação existente. Se a aplicação estiver aberta, o Setup oferece a opção de encerrá-la automaticamente antes de atualizar. Perfis, histórico, configurações, backups e logs permanecem em `%APPDATA%\DumperSG\web`; a desinstalação também preserva esses dados. O encerramento usa o launcher instalado e só prossegue quando não há operações em andamento; nenhum processo é encerrado à força. Se você recusar ou o encerramento falhar, a instalação fica bloqueada e permite tentar novamente. Instalações silenciosas não fecham a aplicação automaticamente. Para desinstalar, encerre a aplicação antes; uma cópia instalada em execução continua bloqueando a desinstalação.
 
 Logs do launcher ficam em `%APPDATA%\DumperSG\web\installed-launcher`. Se já existe outra cópia do DumperSG na porta 8787, abrir o atalho reutiliza a interface existente; encerrar essa outra cópia continua sendo responsabilidade do launcher dela.
 

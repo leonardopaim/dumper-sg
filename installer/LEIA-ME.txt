@@ -16,7 +16,9 @@ Clique com o botão direito e escolha "Abrir DumperSG" ou "Encerrar DumperSG".
 O atalho "Encerrar DumperSG" no menu Iniciar também está disponível.
 O encerramento é bloqueado durante operações.
 Para reiniciar normalmente, use o botão Reiniciar na interface.
-Ao atualizar ou desinstalar, encerre a aplicação antes de executar o instalador.
+Ao atualizar, o Setup oferece a opção de fechar a aplicação automaticamente com segurança.
+Se houver uma operação em andamento, conclua ou cancele e aguarde o término antes de continuar.
+Instalações silenciosas não fecham a aplicação. Para desinstalar, encerre a aplicação antes.
 Para iniciar automaticamente, marque a opção correspondente no Setup.
 Use os atalhos instalados; não execute a cópia avulsa ou a tarefa antiga do projeto.
 

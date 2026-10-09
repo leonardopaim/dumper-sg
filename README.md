@@ -36,8 +36,8 @@ Nas próximas versões, altere o número informado em `-Version`. Compartilhe ap
 ## Atualizar a instalação
 
 1. Conclua ou cancele a operação em andamento e aguarde o término.
-2. Escolha **Encerrar DumperSG** pela bandeja ou pelo menu Iniciar.
-3. Execute o novo Setup e mantenha a pasta da instalação existente.
+2. Execute o novo Setup e mantenha a pasta da instalação existente.
+3. Se a aplicação estiver aberta, aceite o encerramento automático oferecido pelo Setup ou feche-a pela bandeja/menu Iniciar.
 4. Abra **DumperSG** pelo atalho instalado. Se a página antiga continuar aberta, atualize-a com **Ctrl+F5**.
 
 O botão **Reiniciar** na interface reinicia a aplicação instalada; a atualização do executável é feita pelo novo Setup.
