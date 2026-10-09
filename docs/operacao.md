@@ -123,6 +123,8 @@ Os menus de seleção usam opções com bordas arredondadas nos navegadores comp
 
 ## Campos lembrados na interface
 
+Em **Configurações → Aparência**, escolha o tema **Claro** ou **Escuro**. A mudança é aplicada imediatamente a toda a interface e lembrada neste navegador. O tema claro é o padrão; com o armazenamento bloqueado, ainda é possível alternar o tema durante a sessão.
+
 Os perfis cadastrados e o diretório padrão são persistidos no SQLite da aplicação. Os formulários de backup e restauração lembram separadamente o último perfil e os valores preenchidos no navegador, incluindo pasta, banco e threads. A seleção é recuperada por ID mesmo se a lista de perfis mudar de ordem; se o perfil for removido, um perfil disponível é selecionado e o destino de restauração é limpo. A opção de sobrescrever tabelas não é memorizada.
 
 Esses campos são salvos automaticamente, sem credenciais, no armazenamento do navegador para a origem usada. localhost, 127.0.0.1 e as portas 8787/8788 têm armazenamentos independentes. Use o mesmo endereço ao voltar; limpar os dados do site também remove essas preferências. Se o navegador bloquear o armazenamento, os formulários continuam funcionando com seus valores padrão.

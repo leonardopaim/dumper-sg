@@ -17,6 +17,7 @@ import { Alert, Badge, Button, isActive } from "./components/ui";
 import { JobMonitor } from "./components/JobMonitor";
 import { ApplicationRestart } from "./components/ApplicationRestart";
 import { useJobs } from "./hooks/useJobs";
+import { useTheme } from "./hooks/useTheme";
 import { Dashboard } from "./pages/Dashboard";
 import { Profiles } from "./pages/Profiles";
 import { Backup } from "./pages/Backup";
@@ -56,6 +57,7 @@ function initialMonitorVisibility() {
   }
 }
 export function App() {
+  const { theme, changeTheme } = useTheme();
   const [page, setPage] = useState(getPage);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [monitorVisible, setMonitorVisible] = useState(
@@ -393,6 +395,8 @@ export function App() {
               {page === "settings" && (
                 <Settings
                   settings={settings}
+                  theme={theme}
+                  onThemeChange={changeTheme}
                   diagnostics={diagnostics}
                   version={version}
                   onSettings={setSettings}

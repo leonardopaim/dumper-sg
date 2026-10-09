@@ -3,15 +3,19 @@ import {
   CheckCircle2,
   Container,
   Download,
+  Palette,
   RefreshCw,
   Save,
   Shield,
 } from "lucide-react";
 import { api, errorMessage } from "../api";
 import { Alert, Button, Field, Modal, PageHeader } from "../components/ui";
+import type { Theme } from "../hooks/useTheme";
 import type { Diagnostics, Settings as SettingsMap } from "../types";
 export function Settings({
   settings,
+  theme,
+  onThemeChange,
   diagnostics,
   version,
   onSettings,
@@ -19,6 +23,8 @@ export function Settings({
   refreshDiagnostics,
 }: {
   settings: SettingsMap;
+  theme: Theme;
+  onThemeChange: (theme: Theme) => void;
   diagnostics?: Diagnostics;
   version: string;
   onSettings: (data: SettingsMap) => void;
@@ -82,11 +88,34 @@ export function Settings({
       <PageHeader
         eyebrow="PREFERÊNCIAS LOCAIS"
         title="Configurações"
-        description="Defina seu diretório padrão, verifique o ambiente e importe dados do aplicativo anterior."
+        description="Escolha o tema, defina seu diretório padrão, verifique o ambiente e importe dados do aplicativo anterior."
       />
       {notice && <Alert success>{notice}</Alert>}
       {error && !confirm && <Alert>{error}</Alert>}
       <div className="settings-layout">
+        <section className="card form-card full">
+          <div className="card-heading">
+            <span className="icon-tile small">
+              <Palette size={19} />
+            </span>
+            <div>
+              <h2>Aparência</h2>
+              <p>Escolha como o DumperSG aparece neste navegador.</p>
+            </div>
+          </div>
+          <Field
+            label="Tema da interface"
+            hint="Aplicado imediatamente e salvo automaticamente neste navegador."
+          >
+            <select
+              value={theme}
+              onChange={(event) => onThemeChange(event.target.value as Theme)}
+            >
+              <option value="light">Claro</option>
+              <option value="dark">Escuro</option>
+            </select>
+          </Field>
+        </section>
         <section className="card form-card">
           <div className="card-heading">
             <span className="icon-tile small">

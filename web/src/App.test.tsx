@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App, monitorPreferenceKey } from "./App";
 import { api } from "./api";
+import { themePreferenceKey } from "./hooks/useTheme";
 import type { Job, Profile } from "./types";
 const profile: Profile = {
   id: 1,
@@ -31,6 +32,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   location.hash = "";
   localStorage.clear();
+  delete document.documentElement.dataset.theme;
 });
 function mockIdleAPI() {
   vi.spyOn(api, "profiles").mockResolvedValue([profile]);
@@ -194,5 +196,65 @@ describe("navegação durante operações", () => {
       screen.getByRole("button", { name: "Mostrar painel" }),
     ).toBeEnabled();
     expect(localStorage.getItem(monitorPreferenceKey)).toBe("false");
+  });
+});
+
+
+describe("tema da interface", () => {
+  it("aplica a escolha imediatamente, mantém ao navegar e restaura ao reabrir", async () => {
+    location.hash = "#settings";
+    mockIdleAPI();
+    const user = userEvent.setup();
+    let view = render(<App />);
+    const selector = await screen.findByRole("combobox", {
+      name: /Tema da interface/,
+    });
+    expect(selector).toHaveValue("light");
+    expect(document.documentElement).toHaveAttribute("data-theme", "light");
+    await user.selectOptions(selector, "dark");
+    expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+    expect(localStorage.getItem(themePreferenceKey)).toBe("dark");
+    await user.click(screen.getByRole("link", { name: /Criar backup/ }));
+    await screen.findByRole("button", { name: "Iniciar backup" });
+    expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+    view.unmount();
+    location.hash = "#settings";
+    view = render(<App />);
+    expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+    const restored = await screen.findByRole("combobox", {
+      name: /Tema da interface/,
+    });
+    expect(restored).toHaveValue("dark");
+    await user.selectOptions(restored, "light");
+    expect(document.documentElement).toHaveAttribute("data-theme", "light");
+    expect(localStorage.getItem(themePreferenceKey)).toBe("light");
+  });
+
+  it("usa o tema claro quando a preferência salva é inválida", async () => {
+    localStorage.setItem(themePreferenceKey, "invalid");
+    mockIdleAPI();
+    render(<App />);
+    expect(document.documentElement).toHaveAttribute("data-theme", "light");
+    await screen.findByText("Core local conectado");
+  });
+
+  it("permite mudar de tema quando o navegador bloqueia o armazenamento", async () => {
+    location.hash = "#settings";
+    mockIdleAPI();
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("Armazenamento bloqueado");
+    });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("Armazenamento bloqueado");
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    const selector = await screen.findByRole("combobox", {
+      name: /Tema da interface/,
+    });
+    expect(selector).toHaveValue("light");
+    await user.selectOptions(selector, "dark");
+    expect(selector).toHaveValue("dark");
+    expect(document.documentElement).toHaveAttribute("data-theme", "dark");
   });
 });
