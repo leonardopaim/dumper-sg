@@ -15,6 +15,7 @@ export function Settings({
   reload,
   refreshDiagnostics,
   maintenanceAction,
+  onEnvironment,
 }: {
   settings: SettingsMap;
   theme: Theme;
@@ -25,6 +26,7 @@ export function Settings({
   reload: () => Promise<void>;
   refreshDiagnostics: () => Promise<void>;
   maintenanceAction?: ReactNode;
+  onEnvironment?: () => void;
 }) {
   const runOperation = useOperationRequest();
   const [directory, setDirectory] = useState(settings.default_backup_dir || "");
@@ -100,6 +102,20 @@ export function Settings({
       {notice && <Alert success>{notice}</Alert>}
       {error && !confirm && <Alert>{error}</Alert>}
       <div className="settings-layout">
+        {onEnvironment && (
+          <section className="card form-card">
+            <div className="card-heading">
+              <h2>Ambiente da aplicação</h2>
+            </div>
+            <p>
+              Docker, transporte WSL ou nativo, imagens e acesso ao
+              armazenamento.
+            </p>
+            <Button variant="secondary" onClick={onEnvironment}>
+              Ver ambiente
+            </Button>
+          </section>
+        )}
         <section className="card form-card full">
           <div className="card-heading">
             <div>

@@ -62,15 +62,17 @@ export function JobMonitor({ controller }: { controller: JobsController }) {
   const indeterminate = active && progress === 0;
   const logPanelId = `job-logs-${job.id}`;
   const resultTitle =
-    job.status === "failed"
-      ? "A operação falhou"
-      : job.status === "cancelled"
-        ? "Operação cancelada"
-        : job.partial_result
-          ? "Resultado parcial"
-          : job.warning_count
-            ? "Concluído com alertas"
-            : "Operação concluída";
+    job.kind === "backup_restore" && job.partial_result
+      ? "Backup concluído; restauração não concluída"
+      : job.status === "failed"
+        ? "A operação falhou"
+        : job.status === "cancelled"
+          ? "Operação cancelada"
+          : job.partial_result
+            ? "Resultado parcial"
+            : job.warning_count
+              ? "Concluído com alertas"
+              : "Operação concluída";
   const updates = events
     .filter(
       (event) =>
@@ -131,6 +133,39 @@ export function JobMonitor({ controller }: { controller: JobsController }) {
           </Button>
         </div>
       </div>
+      {job.kind === "backup_restore" && (
+        <div
+          className="workflow-stages"
+          aria-label="Etapas do backup e restauração"
+        >
+          <span
+            className={`badge ${job.backup_completed ? "succeeded" : active && job.phase === "backup" ? "running" : "failed"}`}
+          >
+            1. Backup{" "}
+            {job.backup_completed
+              ? "concluído"
+              : active && job.phase === "backup"
+                ? "em andamento"
+                : "não concluído"}
+          </span>
+          <span
+            className={`badge ${job.status === "succeeded" ? "succeeded" : job.phase !== "backup" && active ? "running" : job.backup_completed ? "failed" : "queued"}`}
+          >
+            2. Restauração{" "}
+            {job.status === "succeeded"
+              ? "concluída"
+              : active && job.phase !== "backup"
+                ? "em andamento"
+                : job.backup_completed && !active
+                  ? "não concluída"
+                  : "aguardando"}
+          </span>
+          <p>
+            Destino: {job.target_profile_name} · {job.target_host}:
+            {job.target_port} / {job.target_database}
+          </p>
+        </div>
+      )}
       {!active && (
         <div
           className={`operation-result ${job.status === "succeeded" ? (job.partial_result || job.warning_count ? "warning" : "success") : job.status === "failed" ? "error" : "cancelled"}`}
@@ -140,10 +175,16 @@ export function JobMonitor({ controller }: { controller: JobsController }) {
           <h3>{resultTitle}</h3>
           <p>{job.message || "Consulte os detalhes da operação."}</p>
           {job.warning_message && <p>{job.warning_message}</p>}
-          {job.partial_result && (
+          {job.partial_result && job.kind !== "backup_restore" && (
             <p>
               A lista de bancos foi obtida, mas parte das informações de grupos
               ou empresas não pôde ser consultada.
+            </p>
+          )}
+          {job.kind === "backup_restore" && job.backup_completed && (
+            <p>
+              O backup está preservado em {job.path}. Você pode restaurá-lo
+              novamente em Meus backups.
             </p>
           )}
           {job.status === "failed" && (

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Backup } from "./Backup";
 import { backupDraftKey } from "../hooks/useOperationDraft";
@@ -24,6 +24,143 @@ const props = {
   onProfiles: vi.fn(),
 };
 beforeEach(() => localStorage.clear());
+describe("backup com restauração automática", () => {
+  it.each(["origem", "copia_local"])(
+    "exige confirmação do destino e envia as duas etapas em uma requisição para %s",
+    async (targetDatabase) => {
+      const start = vi.spyOn(api, "backup").mockResolvedValue({
+        id: "chain",
+        kind: "backup_restore",
+        status: "running",
+      } as Job);
+      const user = userEvent.setup();
+      const onJob = vi.fn();
+      render(
+        <Backup
+          {...props}
+          profiles={[
+            { ...profile, host: "remote.example" },
+            {
+              ...profile,
+              id: 2,
+              name: "Destino local",
+              database: "mysql",
+              threads: 4,
+            },
+          ]}
+          onJob={onJob}
+        />,
+      );
+      await user.click(
+        screen.getByLabelText("Restaurar no banco local após o backup"),
+      );
+      expect(screen.getByLabelText("Banco de destino")).toHaveValue("origem");
+      if (targetDatabase !== "origem") {
+        await user.clear(screen.getByLabelText("Banco de destino"));
+        await user.type(
+          screen.getByLabelText("Banco de destino"),
+          targetDatabase,
+        );
+      }
+      await user.click(
+        screen.getByRole("button", { name: "Iniciar backup e restauração" }),
+      );
+      expect(start).not.toHaveBeenCalled();
+      const modal = screen.getByRole("dialog", {
+        name: "Confirmar backup e restauração",
+      });
+      expect(
+        within(modal).getByText(
+          `Destino local · localhost:3306 / ${targetDatabase}`,
+        ),
+      ).toBeInTheDocument();
+      await user.click(
+        within(modal).getByRole("button", {
+          name: "Confirmar backup e restauração",
+        }),
+      );
+      expect(start).toHaveBeenCalledWith(
+        expect.objectContaining({
+          restore: {
+            profile_id: 2,
+            target_database: targetDatabase,
+            threads: 0,
+            overwrite_tables: false,
+          },
+        }),
+      );
+      expect(onJob).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "backup_restore" }),
+      );
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    },
+  );
+  it("acompanha o banco selecionado no catálogo e as alterações da origem", async () => {
+    const user = userEvent.setup();
+    const profiles = [
+      { ...profile, host: "remote.example" },
+      { ...profile, id: 2, name: "Destino", database: "mysql" },
+    ];
+    const view = render(
+      <Backup
+        {...props}
+        profiles={profiles}
+        initialSource={{ profile_id: 1, database: "sommusgestor_12" }}
+      />,
+    );
+    view.rerender(<Backup {...props} profiles={profiles} />);
+    await user.click(
+      screen.getByLabelText("Restaurar no banco local após o backup"),
+    );
+    expect(screen.getByLabelText("Banco de destino")).toHaveValue(
+      "sommusgestor_12",
+    );
+    await user.clear(screen.getByLabelText("Banco de origem"));
+    await user.type(
+      screen.getByLabelText("Banco de origem"),
+      "sommusgestor_34",
+    );
+    expect(screen.getByLabelText("Banco de destino")).toHaveValue(
+      "sommusgestor_34",
+    );
+    await user.selectOptions(screen.getByLabelText("Perfil de conexão"), "2");
+    expect(screen.getByLabelText("Banco de destino")).toHaveValue("mysql");
+  });
+  it("não aceita origem e destino iguais em perfis locais diferentes", async () => {
+    const user = userEvent.setup();
+    const start = vi.spyOn(api, "backup");
+    render(
+      <Backup
+        {...props}
+        profiles={[
+          profile,
+          {
+            ...profile,
+            id: 2,
+            name: "Destino",
+            host: "127.0.0.1",
+            database: "mysql",
+          },
+        ]}
+      />,
+    );
+    await user.click(
+      screen.getByLabelText("Restaurar no banco local após o backup"),
+    );
+    await user.selectOptions(
+      screen.getByLabelText("Perfil local de destino"),
+      "2",
+    );
+    expect(screen.getByLabelText("Banco de destino")).toHaveValue("origem");
+    expect(
+      screen.getByRole("button", { name: "Iniciar backup e restauração" }),
+    ).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "diferente do banco de origem",
+    );
+    expect(start).not.toHaveBeenCalled();
+  });
+});
 describe("preferências do backup", () => {
   it("lembra a seleção e preserva os campos quando os perfis são reordenados", async () => {
     const second = {

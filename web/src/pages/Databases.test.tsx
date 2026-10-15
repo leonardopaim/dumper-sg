@@ -38,6 +38,7 @@ const props = {
   profiles: [profile],
   active: false,
   onJob: vi.fn(),
+  onDetails: vi.fn(),
   onBackup: vi.fn(),
   onProfiles: vi.fn(),
 };
@@ -60,17 +61,22 @@ describe("bancos disponíveis", () => {
     await user.click(screen.getByRole("button", { name: "Carregar bancos" }));
     await screen.findByText("Grupo Um");
     const search = screen.getByRole("searchbox");
-    const mode = screen.getByLabelText("Tipo de pesquisa");
+    const mode = screen.getByRole("button", {
+      name: "Tipo de pesquisa: Automática",
+    });
     await user.type(search, " SOMMUSGESTOR_1 ");
     expect(screen.getByText("Grupo Um")).toBeInTheDocument();
     expect(screen.queryByText("Grupo Dez")).not.toBeInTheDocument();
     expect(screen.queryByText("Grupo Cem")).not.toBeInTheDocument();
-    await user.selectOptions(mode, "contains");
+    await user.click(mode);
+    expect(mode).toHaveAccessibleName("Tipo de pesquisa: Igual (exata)");
+    expect(screen.queryByText("Grupo Dez")).not.toBeInTheDocument();
+    await user.click(mode);
+    expect(mode).toHaveAccessibleName("Tipo de pesquisa: Contém (parcial)");
     expect(screen.getByText("Grupo Dez")).toBeInTheDocument();
     expect(screen.getByText("Grupo Cem")).toBeInTheDocument();
-    await user.selectOptions(mode, "exact");
-    expect(screen.queryByText("Grupo Dez")).not.toBeInTheDocument();
-    await user.selectOptions(mode, "auto");
+    await user.click(mode);
+    expect(mode).toHaveAccessibleName("Tipo de pesquisa: Automática");
     await user.clear(search);
     await user.type(search, "1");
     expect(screen.getByText("Grupo Um")).toBeInTheDocument();
@@ -92,9 +98,8 @@ describe("bancos disponíveis", () => {
       expect(screen.getByText("Comércio São José")).toBeInTheDocument();
       expect(screen.queryByText("outro")).not.toBeInTheDocument();
     }
-    await user.selectOptions(
-      screen.getByLabelText("Tipo de pesquisa"),
-      "exact",
+    await user.click(
+      screen.getByRole("button", { name: "Tipo de pesquisa: Automática" }),
     );
     expect(screen.queryByText("Comércio São José")).not.toBeInTheDocument();
     for (const value of [

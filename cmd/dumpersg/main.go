@@ -91,6 +91,19 @@ func run() error {
 	restartRequested := make(chan struct{}, 1)
 	shutdownRequested := make(chan struct{}, 1)
 	options := httpapi.Options{AllowedHosts: allowedHosts, AllowedOrigins: allowedOrigins, Assets: assets, BackupDir: cfg.BackupDir, Diagnostics: executor.Diagnostics, Importer: repo, InstanceID: *instanceID}
+	options.Environment = func(ctx context.Context) (core.EnvironmentReport, error) {
+		settings, err := repo.GetSettings(ctx)
+		if err != nil {
+			return core.EnvironmentReport{}, err
+		}
+		current := cfg
+		if settings["default_backup_dir"] != "" {
+			current.BackupDir = settings["default_backup_dir"]
+		}
+		report := core.InspectEnvironment(*addr, dataPath, current)
+		report.Docker = executor.Environment(ctx, current)
+		return report, nil
+	}
 	if *restartEnabled {
 		options.Restart = func(ctx context.Context) error {
 			if err := manager.PrepareRestart(ctx); err != nil {

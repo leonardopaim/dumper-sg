@@ -15,6 +15,7 @@ export type ProfileInput = Omit<Profile, "id" | "has_password"> & {
 };
 export type JobKind =
   | "backup"
+  | "backup_restore"
   | "restore"
   | "connection_test"
   | "create_database"
@@ -39,6 +40,12 @@ export interface Job {
   progress: number;
   message: string;
   exit_code?: number;
+  phase?: "backup" | "preparing_restore" | "restore";
+  backup_completed?: boolean;
+  target_profile_name?: string;
+  target_database?: string;
+  target_host?: string;
+  target_port?: number;
 }
 export interface JobEvent {
   sequence: number;
@@ -75,6 +82,46 @@ export interface BackupInput {
   non_locking: boolean;
   ignore_regex: string;
   tables?: string[] | null;
+  restore?: RestoreDestination;
+}
+export interface RestoreDestination {
+  profile_id: number;
+  target_database: string;
+  threads: number;
+  overwrite_tables: boolean;
+}
+export interface EnvironmentReport {
+  checked_at: string;
+  platform: string;
+  architecture: string;
+  go_version: string;
+  api_address: string;
+  database_path: string;
+  directories: {
+    name: string;
+    path: string;
+    exists: boolean;
+    readable: boolean;
+    writable: boolean;
+    message?: string;
+  }[];
+  docker: {
+    available: boolean;
+    runtime: string;
+    distribution?: string;
+    discovery_pending: boolean;
+    engine?: string;
+    version?: string;
+    daemon_id?: string;
+    daemon_name?: string;
+    operating_system?: string;
+    container_os?: string;
+    network: string;
+    backup_mount?: string;
+    backup_mount_accessible: boolean;
+    message: string;
+    images: { name: string; present: boolean; id?: string; message: string }[];
+  };
 }
 export interface RestoreInput {
   profile_id: number;

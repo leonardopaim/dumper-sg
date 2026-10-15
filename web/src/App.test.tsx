@@ -94,7 +94,12 @@ describe("navegação durante operações", () => {
     expect(within(modal).getByText("32% estimado")).toBeInTheDocument();
     await user.click(within(modal).getByRole("button", { name: "Minimizar" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Ver operação" }));
+    await user.click(screen.getByRole("link", { name: "Histórico" }));
+    await user.click(
+      await screen.findByRole("button", {
+        name: /Ver detalhes de Backup em Local/,
+      }),
+    );
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
   it("recupera a operação ao recarregar sem interromper a navegação", async () => {
@@ -102,9 +107,14 @@ describe("navegação durante operações", () => {
     vi.spyOn(api, "jobs").mockResolvedValue([running]);
     const user = userEvent.setup();
     render(<App />);
-    await screen.findByRole("button", { name: "Ver operação" });
+    await screen.findByRole("button", { name: /Backup · Local/ });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Ver operação" }));
+    await user.click(screen.getByRole("link", { name: "Histórico" }));
+    await user.click(
+      await screen.findByRole("button", {
+        name: /Ver detalhes de Backup em Local/,
+      }),
+    );
     expect(screen.getByRole("dialog")).toHaveAccessibleName(
       "Backup · Em andamento",
     );
@@ -126,14 +136,19 @@ describe("navegação durante operações", () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(
-      await screen.findByRole("button", { name: "Ver operação" }),
+      await screen.findByRole("button", { name: /Backup · Local/ }),
     );
     await user.click(screen.getByRole("button", { name: "Minimizar" }));
     await user.click(screen.getByRole("link", { name: /Perfis de banco/ }));
     expect(
       screen.getByRole("heading", { name: "Perfis de banco" }),
     ).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Ver operação" }));
+    await user.click(screen.getByRole("link", { name: "Histórico" }));
+    await user.click(
+      await screen.findByRole("button", {
+        name: /Ver detalhes de Backup em Local/,
+      }),
+    );
     const monitor = within(screen.getByRole("dialog"));
     expect(monitor.getByText("32% estimado")).toBeInTheDocument();
     await user.click(monitor.getByRole("button", { name: "Mostrar logs" }));
@@ -287,8 +302,8 @@ describe("seleção da origem pelo catálogo", () => {
   });
 });
 
-describe("consultas no modal", () => {
-  it("não reabre o modal minimizado quando uma consulta recebe seu resultado", async () => {
+describe("detalhes da consulta de bancos", () => {
+  it("mostra o loader na lista e abre o modal somente ao pedir detalhes, sem reabri-lo após minimizar", async () => {
     location.hash = "#databases";
     mockIdleAPI();
     const query: Job = { ...running, kind: "database_list" };
@@ -309,6 +324,14 @@ describe("consultas no modal", () => {
     await user.click(
       await screen.findByRole("button", { name: "Carregar bancos" }),
     );
+    expect(screen.getByText("Procurando bancos de dados…")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Ver operação" }),
+    ).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Ver detalhes" }),
+    );
     await screen.findByRole("dialog", {
       name: "Consulta de bancos · Em andamento",
     });
@@ -316,7 +339,62 @@ describe("consultas no modal", () => {
     finish();
     await screen.findByText("banco_consultado");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Ver operação" })).toBeEnabled();
+    expect(
+      screen.queryByText("Procurando bancos de dados…"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Ver detalhes" }),
+    ).not.toBeInTheDocument();
+  });
+  it("exibe o catálogo sem abrir o modal quando ninguém pede detalhes", async () => {
+    location.hash = "#databases";
+    mockIdleAPI();
+    let finish!: (result: { databases: { name: string }[] }) => void;
+    vi.spyOn(api, "databases").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(
+      await screen.findByRole("button", { name: "Carregar bancos" }),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    finish({ databases: [{ name: "banco_consultado" }] });
+    await screen.findByText("banco_consultado");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  it("permite ver detalhes durante a preparação e mantém a falha na lista se o modal estiver minimizado", async () => {
+    location.hash = "#databases";
+    mockIdleAPI();
+    let rejectStart!: (error: Error) => void;
+    vi.spyOn(api, "databases").mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectStart = reject;
+        }),
+    );
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(
+      await screen.findByRole("button", { name: "Carregar bancos" }),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Ver detalhes" }),
+    );
+    expect(screen.getByRole("dialog")).toHaveAccessibleName(
+      "Consulta de bancos · Preparando",
+    );
+    await user.click(screen.getByRole("button", { name: "Minimizar" }));
+    rejectStart(new Error("Conexão recusada"));
+    await screen.findByText("Conexão recusada");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Procurando bancos de dados…"),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -367,7 +445,12 @@ describe("preparação e falha antes de criar o job", () => {
     finishStart(running);
     await waitFor(() => expect(api.events).toHaveBeenCalled());
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Ver operação" }));
+    await user.click(screen.getByRole("link", { name: "Histórico" }));
+    await user.click(
+      await screen.findByRole("button", {
+        name: /Ver detalhes de Backup em Local/,
+      }),
+    );
     expect(screen.getByRole("dialog")).toHaveAccessibleName(
       "Backup · Em andamento",
     );

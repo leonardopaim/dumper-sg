@@ -1,6 +1,15 @@
 import { useOperationRequest } from "../components/OperationFeedback";
 import { useEffect, useRef, useState } from "react";
-import { Archive, Database, RefreshCw, Search } from "lucide-react";
+import {
+  Archive,
+  Database,
+  Equal,
+  LoaderCircle,
+  RefreshCw,
+  Search,
+  TextSearch,
+  WandSparkles,
+} from "lucide-react";
 import { api, errorMessage } from "../api";
 import { Alert, Button, Empty, Field, PageHeader } from "../components/ui";
 import type {
@@ -20,6 +29,29 @@ const searchable = (value: string) =>
     .trim();
 
 type SearchMode = "auto" | "exact" | "contains";
+const searchModes = {
+  auto: {
+    label: "Automática",
+    icon: WandSparkles,
+    next: "exact",
+    hint: "IDs e databases completos usam correspondência exata; nomes usam pesquisa parcial.",
+  },
+  exact: {
+    label: "Igual (exata)",
+    icon: Equal,
+    next: "contains",
+    hint: "O valor pesquisado deve corresponder ao nome, ID ou database inteiro.",
+  },
+  contains: {
+    label: "Contém (parcial)",
+    icon: TextSearch,
+    next: "auto",
+    hint: "Encontra nomes, IDs e databases que contêm os termos pesquisados.",
+  },
+} satisfies Record<
+  SearchMode,
+  { label: string; icon: typeof Search; next: SearchMode; hint: string }
+>;
 function matchesDatabase(row: DatabaseInfo, query: string, mode: SearchMode) {
   if (!query) return true;
   if (mode === "auto" && /^sommusgestor_\d+$/.test(query))
@@ -49,12 +81,14 @@ export function Databases({
   profiles,
   active,
   onJob,
+  onDetails,
   onBackup,
   onProfiles,
 }: {
   profiles: Profile[];
   active: boolean;
   onJob: (job: Job) => void;
+  onDetails: (job?: Job) => void;
   onBackup: (source: BackupSource) => void;
   onProfiles: () => void;
 }) {
@@ -62,11 +96,15 @@ export function Databases({
   const [profileId, setProfileId] = useState(profiles[0]?.id || 0);
   const [filter, setFilter] = useState("");
   const [searchMode, setSearchMode] = useState<SearchMode>("auto");
+  const mode = searchModes[searchMode];
+  const ModeIcon = mode.icon;
+  const modeTitle = `Pesquisa: ${mode.label}. ${mode.hint} Clique para mudar para ${searchModes[mode.next].label}.`;
   const [catalog, setCatalog] = useState<{
     profileId: number;
     result: DatabaseCatalog;
   }>();
   const [pending, setPending] = useState<number>();
+  const [queryJob, setQueryJob] = useState<Job>();
   const [failure, setFailure] = useState<{
     profileId: number;
     message: string;
@@ -96,6 +134,7 @@ export function Databases({
     setFilter("");
     setCatalog(undefined);
     setPending(undefined);
+    setQueryJob(undefined);
     setFailure(undefined);
     return () => {
       request.current?.abort();
@@ -109,6 +148,7 @@ export function Databases({
     const controller = new AbortController();
     request.current = controller;
     setPending(profileId);
+    setQueryJob(undefined);
     setFailure(undefined);
     setCatalog(undefined);
     try {
@@ -119,8 +159,10 @@ export function Databases({
             if (
               !controller.signal.aborted &&
               currentProfile.current === profileId
-            )
+            ) {
+              setQueryJob(job);
               onJob(job);
+            }
           },
         }),
       );
@@ -163,39 +205,33 @@ export function Databases({
                 ))}
               </select>
             </Field>
-            <Field label="Buscar grupo, empresa ou database">
-              <span className="search-input">
-                <Search size={16} />
-                <input
-                  type="search"
-                  value={filter}
-                  onChange={(event) => setFilter(event.target.value)}
-                  placeholder="Grupo, razão social, nome fantasia, ID ou database"
-                />
-              </span>
-            </Field>
-            <details className="search-options">
-              <summary>Filtro de pesquisa</summary>
-              <Field label="Tipo de pesquisa">
-                <select
-                  value={searchMode}
-                  onChange={(event) =>
-                    setSearchMode(event.target.value as SearchMode)
-                  }
-                >
-                  <option value="auto">Automática</option>
-                  <option value="exact">Igual (exata)</option>
-                  <option value="contains">Contém (parcial)</option>
-                </select>
+            <div className="database-search-controls">
+              <Field label="Buscar grupo, empresa ou banco">
+                <span className="search-input">
+                  <Search size={16} />
+                  <input
+                    type="search"
+                    value={filter}
+                    onChange={(event) => setFilter(event.target.value)}
+                    placeholder="Nome, ID ou database"
+                  />
+                </span>
               </Field>
-            </details>
+              <Button
+                variant="secondary"
+                className="database-search-mode"
+                aria-label={`Tipo de pesquisa: ${mode.label}`}
+                title={modeTitle}
+                onClick={() => setSearchMode(mode.next)}
+              >
+                <ModeIcon size={18} />
+              </Button>
+            </div>
             <Button
-              variant="secondary"
-              busy={busy}
-              disabled={active || !profile}
+              disabled={busy || active || !profile}
               onClick={() => void load()}
             >
-              <RefreshCw size={16} />
+              {result ? <RefreshCw size={16} /> : <Database size={16} />}
               {result ? "Atualizar bancos" : "Carregar bancos"}
             </Button>
           </div>
@@ -216,7 +252,15 @@ export function Databases({
             </p>
           )}
           {busy ? (
-            <Empty title="Consultando bancos, grupos e empresas…" />
+            <div className="database-loading">
+              <div role="status" aria-live="polite">
+                <LoaderCircle className="spin" size={28} aria-hidden="true" />
+                <strong>Procurando bancos de dados…</strong>
+              </div>
+              <Button variant="secondary" onClick={() => onDetails(queryJob)}>
+                Ver detalhes
+              </Button>
+            </div>
           ) : result ? (
             <>
               <div className="table-scroll">

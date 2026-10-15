@@ -32,6 +32,7 @@ type execution struct {
 	logBytes int
 	err      error
 	catalog  resultCatalog
+	plan     *backupRestorePlan
 }
 
 type Manager struct {
@@ -63,6 +64,7 @@ func New(repo core.Repository, executor core.Executor, cfg core.Config) *Manager
 		if job.Status == "running" || job.Status == "cancel_requested" {
 			job.Status, job.Message, job.FinishedAt = "failed", "Operação interrompida pelo encerramento anterior; verifique o container antes de repetir.", timestamp()
 			job.CleanupRequired = true
+			job.PartialResult = job.BackupCompleted
 			if err := repo.SaveJob(ctx, job); err != nil {
 				m.initErr = err
 				return m
@@ -99,6 +101,9 @@ func (m *Manager) profile(ctx context.Context, id int64) (core.Profile, string, 
 }
 
 func (m *Manager) StartBackup(ctx context.Context, req core.BackupRequest) (core.Job, error) {
+	if req.Restore != nil {
+		return m.startBackupRestore(ctx, req)
+	}
 	p, id, err := m.profile(ctx, req.ProfileID)
 	if err != nil {
 		return core.Job{}, err
@@ -173,6 +178,10 @@ func (m *Manager) startCollected(ctx context.Context, p core.Profile, cmd core.C
 }
 
 func (m *Manager) startCollectedLocked(ctx context.Context, p core.Profile, cmd core.Command, job core.Job, catalog resultCatalog) (core.Job, error) {
+	return m.startPlannedLocked(ctx, p, cmd, job, catalog, nil)
+}
+
+func (m *Manager) startPlannedLocked(ctx context.Context, p core.Profile, cmd core.Command, job core.Job, catalog resultCatalog, plan *backupRestorePlan) (core.Job, error) {
 	if m.initErr != nil {
 		return core.Job{}, m.initErr
 	}
@@ -203,6 +212,9 @@ func (m *Manager) startCollectedLocked(ctx context.Context, p core.Profile, cmd 
 		return core.Job{}, err
 	}
 	job.Status, job.StartedAt, job.Message = "running", timestamp(), "Operação iniciada; progresso estimado."
+	if plan != nil {
+		job.Message = "Etapa 1 de 2: criando backup."
+	}
 	if catalog != nil {
 		job.Message = "Consultando tabelas e views..."
 		if job.Kind == "database_list" {
@@ -217,6 +229,10 @@ func (m *Manager) startCollectedLocked(ctx context.Context, p core.Profile, cmd 
 	}
 	jobCtx, cancel := context.WithCancel(context.Background())
 	x := &execution{job: job, command: core.Command{Program: cmd.Program, ContainerName: cmd.ContainerName, DockerIdentity: cmd.DockerIdentity}, secrets: append([]string(nil), cmd.Secrets...), cancel: cancel, done: make(chan struct{}), file: f, catalog: catalog}
+	x.plan = plan
+	if plan != nil {
+		x.secrets = append(x.secrets, plan.target.Password)
+	}
 	m.active, m.retained[job.ID] = x, x
 	m.order = append(m.order, job.ID)
 	for len(m.order) > maxRetainedJobs {
@@ -288,25 +304,10 @@ func (m *Manager) run(ctx context.Context, x *execution, cmd core.Command) {
 			}
 		}
 	}()
-	err := m.executor.Run(ctx, cmd, func(level, text string) {
-		m.mu.Lock()
-		defer m.mu.Unlock()
-		if m.active == x {
-			if level == "data" {
-				if x.catalog != nil {
-					x.catalog.consume(text)
-				}
-			} else {
-				if strings.HasPrefix(text, "Primeiro uso: baixando imagem ") || strings.HasPrefix(text, "Imagem disponível: ") {
-					x.job.Message = text
-					if err := m.save(x.job); err != nil {
-						m.eventLocked(x, "error", "Falha ao salvar preparação: "+err.Error())
-					}
-				}
-				m.eventLocked(x, level, text)
-			}
-		}
-	})
+	err := m.runCommand(ctx, x, cmd)
+	if err == nil && ctx.Err() == nil && x.plan != nil {
+		err = m.runBackupRestore(ctx, x)
+	}
 	if err == nil && ctx.Err() == nil && x.catalog != nil {
 		m.mu.Lock()
 		err = x.catalog.failure()
@@ -340,6 +341,9 @@ func (m *Manager) run(ctx context.Context, x *execution, cmd core.Command) {
 		}
 	default:
 		x.job.Status, x.job.Message, x.job.Progress = "succeeded", "Operação concluída.", 100
+		if x.plan != nil {
+			x.job.Message = "Backup e restauração concluídos. O backup foi preservado."
+		}
 		if x.catalog != nil {
 			x.job.Message = x.catalog.finish()
 			if catalog, ok := x.catalog.(*databaseCatalog); ok {
@@ -348,6 +352,9 @@ func (m *Manager) run(ctx context.Context, x *execution, cmd core.Command) {
 		}
 		n := 0
 		x.job.ExitCode = &n
+	}
+	if x.plan != nil && x.job.BackupCompleted && x.job.Status != "succeeded" {
+		x.job.PartialResult = true
 	}
 	if saveErr := m.save(x.job); saveErr != nil {
 		x.err = errors.Join(x.err, fmt.Errorf("falha ao persistir resultado: %w", saveErr))
@@ -369,9 +376,32 @@ func (m *Manager) run(ctx context.Context, x *execution, cmd core.Command) {
 		x.file = nil
 	}
 	x.secrets = nil
+	x.plan = nil
 	x.cancel()
 	m.active = nil
 	close(x.done)
+}
+
+func (m *Manager) runCommand(ctx context.Context, x *execution, cmd core.Command) error {
+	return m.executor.Run(ctx, cmd, func(level, text string) {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		if m.active == x {
+			if level == "data" {
+				if x.catalog != nil {
+					x.catalog.consume(text)
+				}
+			} else {
+				if strings.HasPrefix(text, "Primeiro uso: baixando imagem ") || strings.HasPrefix(text, "Imagem disponível: ") {
+					x.job.Message = text
+					if err := m.save(x.job); err != nil {
+						m.eventLocked(x, "error", "Falha ao salvar preparação: "+err.Error())
+					}
+				}
+				m.eventLocked(x, level, text)
+			}
+		}
+	})
 }
 
 // A completed CLI does not release capacity when external termination is unknown.

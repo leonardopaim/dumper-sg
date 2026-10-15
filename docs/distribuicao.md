@@ -14,6 +14,20 @@ As imagens MyDumper/MySQL são baixadas automaticamente na primeira operação q
 
 O instalador oferece atalhos e uma opção para iniciar em segundo plano ao entrar na conta atual. Fechar o navegador mantém o core funcionando. Clique com o botão direito no ícone da bandeja e escolha **Encerrar DumperSG** para sair, ou **Abrir DumperSG** para abrir o navegador. O ícone pode estar na seta de ícones ocultos junto ao relógio. O atalho **Encerrar DumperSG** no menu Iniciar continua disponível; use **Reiniciar** na interface para reiniciar. O encerramento é bloqueado durante backup/restore e outras operações ativas.
 
+## Ícones
+
+Os PNGs originais com transparência ficam em `web/public/dumpersg.png` (principal) e `web/public/dumpersg-tray.png` (simplificado), criados no chat "Ícones para DumperSG". A interface usa o principal; a bandeja e o favicon usam o simplificado. O instalador e os atalhos recebem o ícone principal pelo build.
+
+Após substituir os PNGs, regenere os arquivos ICO com resoluções de 16 a 256 pixels:
+
+```powershell
+.\scripts\build-icon.ps1 -SourcePath .\web\public\dumpersg-tray.png -OutputPath .\cmd\dumpersg\tray.ico
+Copy-Item .\cmd\dumpersg\tray.ico .\web\public\favicon.ico
+.\scripts\build-icon.ps1 -OutputPath .\dist\DumperSG.ico
+```
+
+Recompile a aplicação para incorporar o novo ícone da bandeja e a interface. O build do instalador gera seu ICO diretamente do PNG principal.
+
 ## Atualização e desinstalação
 
 Execute o novo instalador e mantenha a pasta da instalação existente. Se a aplicação estiver aberta, o Setup oferece a opção de encerrá-la automaticamente antes de atualizar. Perfis, histórico, configurações, backups e logs permanecem em `%APPDATA%\DumperSG\web`; a desinstalação também preserva esses dados. O encerramento usa o launcher instalado e só prossegue quando não há operações em andamento; nenhum processo é encerrado à força. Se você recusar ou o encerramento falhar, a instalação fica bloqueada e permite tentar novamente. Instalações silenciosas não fecham a aplicação automaticamente. Para desinstalar, encerre a aplicação antes; uma cópia instalada em execução continua bloqueando a desinstalação.

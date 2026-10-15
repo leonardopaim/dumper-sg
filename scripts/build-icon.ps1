@@ -1,39 +1,35 @@
-param([Parameter(Mandatory=$true)][string]$OutputPath)
+param(
+    [Parameter(Mandatory=$true)][string]$OutputPath,
+    [string]$SourcePath = (Join-Path $PSScriptRoot '..\web\public\dumpersg.png')
+)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
-# Reproduce the existing SVG geometry at each Windows icon resolution.
-$taskSizes = @(16,32,48,64,128,256)
+# Preserve the original PNG transparency at each Windows icon resolution.
+$taskSizes = @(16,20,24,32,40,48,64,128,256)
 $taskImages = @()
-foreach ($taskSize in $taskSizes) {
-    $taskBitmap = [Drawing.Bitmap]::new($taskSize,$taskSize)
-    $taskGraphics = [Drawing.Graphics]::FromImage($taskBitmap)
-    $taskGraphics.SmoothingMode = [Drawing.Drawing2D.SmoothingMode]::AntiAlias
-    $taskGraphics.ScaleTransform($taskSize/64.0,$taskSize/64.0)
-    $taskPath = [Drawing.Drawing2D.GraphicsPath]::new()
-    $taskPath.AddArc(0,0,30,30,180,90)
-    $taskPath.AddArc(34,0,30,30,270,90)
-    $taskPath.AddArc(34,34,30,30,0,90)
-    $taskPath.AddArc(0,34,30,30,90,90)
-    $taskPath.CloseFigure()
-    $taskBrush = [Drawing.Drawing2D.LinearGradientBrush]::new([Drawing.Rectangle]::new(0,0,64,64),[Drawing.ColorTranslator]::FromHtml('#6387ff'),[Drawing.ColorTranslator]::FromHtml('#365bd9'),45.0)
-    $taskGraphics.FillPath($taskBrush,$taskPath)
-    $taskPen = [Drawing.Pen]::new([Drawing.Color]::White,3.5)
-    $taskPen.StartCap = [Drawing.Drawing2D.LineCap]::Round
-    $taskPen.EndCap = [Drawing.Drawing2D.LineCap]::Round
-    $taskPen.LineJoin = [Drawing.Drawing2D.LineJoin]::Round
-    $taskGraphics.DrawEllipse($taskPen,13,12,28,12)
-    $taskGraphics.DrawLine($taskPen,13,18,13,42)
-    $taskGraphics.DrawArc($taskPen,13,36,28,12,0,180)
-    $taskGraphics.DrawArc($taskPen,13,24,28,12,0,180)
-    $taskGraphics.DrawLine($taskPen,41,18,41,26)
-    $taskGraphics.DrawLine($taskPen,46,33,46,52)
-    $taskGraphics.DrawLine($taskPen,39,45,46,52)
-    $taskGraphics.DrawLine($taskPen,46,52,53,45)
-    $taskMemory = [IO.MemoryStream]::new()
-    $taskBitmap.Save($taskMemory,[Drawing.Imaging.ImageFormat]::Png)
-    $taskImages += ,$taskMemory.ToArray()
-    $taskMemory.Dispose(); $taskPen.Dispose(); $taskBrush.Dispose(); $taskPath.Dispose(); $taskGraphics.Dispose(); $taskBitmap.Dispose()
-}
+$taskSource = [Drawing.Image]::FromFile([IO.Path]::GetFullPath($SourcePath))
+try {
+    foreach ($taskSize in $taskSizes) {
+        $taskBitmap = [Drawing.Bitmap]::new($taskSize,$taskSize,[Drawing.Imaging.PixelFormat]::Format32bppArgb)
+        $taskGraphics = [Drawing.Graphics]::FromImage($taskBitmap)
+        $taskMemory = [IO.MemoryStream]::new()
+        try {
+            $taskGraphics.CompositingMode = [Drawing.Drawing2D.CompositingMode]::SourceCopy
+            $taskGraphics.CompositingQuality = [Drawing.Drawing2D.CompositingQuality]::HighQuality
+            $taskGraphics.InterpolationMode = [Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+            $taskGraphics.PixelOffsetMode = [Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+            $taskScale = [Math]::Min($taskSize/[double]$taskSource.Width,$taskSize/[double]$taskSource.Height)
+            $taskWidth = [single]($taskSource.Width*$taskScale)
+            $taskHeight = [single]($taskSource.Height*$taskScale)
+            $taskRect = [Drawing.RectangleF]::new(($taskSize-$taskWidth)/2,($taskSize-$taskHeight)/2,$taskWidth,$taskHeight)
+            $taskGraphics.DrawImage($taskSource,$taskRect)
+            $taskBitmap.Save($taskMemory,[Drawing.Imaging.ImageFormat]::Png)
+            $taskImages += ,$taskMemory.ToArray()
+        } finally {
+            $taskMemory.Dispose(); $taskGraphics.Dispose(); $taskBitmap.Dispose()
+        }
+    }
+} finally { $taskSource.Dispose() }
 $taskStream = [IO.File]::Create([IO.Path]::GetFullPath($OutputPath))
 $taskWriter = [IO.BinaryWriter]::new($taskStream)
 try {

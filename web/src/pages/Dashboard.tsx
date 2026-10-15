@@ -74,7 +74,7 @@ export function Dashboard({
                 <span className="activity-icon">
                   {job.kind === "restore" ? (
                     <RotateCcw size={18} />
-                  ) : job.kind === "backup" ? (
+                  ) : job.kind === "backup" || job.kind === "backup_restore" ? (
                     <Archive size={18} />
                   ) : (
                     <Database size={18} />

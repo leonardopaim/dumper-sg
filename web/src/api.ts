@@ -13,6 +13,7 @@ import type {
   DatabaseCatalog,
   BackupTableInfo,
   ApplicationStatus,
+  EnvironmentReport,
 } from "./types";
 const base = "/api/v1";
 let tokenPromise: Promise<string> | undefined;
@@ -126,6 +127,8 @@ export const api = {
   saveSettings: (data: Settings) =>
     request<Settings>("/settings", "PATCH", data),
   diagnostics: () => request<Diagnostics>("/diagnostics"),
+  environment: (signal?: AbortSignal) =>
+    request<EnvironmentReport>("/environment", "GET", undefined, signal),
   health: () => request<{ status: string; version: string }>("/health"),
   importLegacy: (path: string) =>
     request<{ profiles: number; jobs: number }>("/import/legacy", "POST", {

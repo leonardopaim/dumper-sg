@@ -28,4 +28,11 @@ INSERT INTO jobs(id,started_at,payload) SELECT printf('query-%d',v),'2026-10-08T
 	if err != nil || len(backups) != 1 || backups[0].ID != "old-backup" {
 		t.Fatalf("backups: %+v %v", backups, err)
 	}
+	if err := s.SaveJob(ctx, core.Job{ID: "partial-chain", Kind: "backup_restore", Status: "failed", BackupCompleted: true, PartialResult: true, Path: "custom-chain", StartedAt: "2020-01-02T00:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+	backups, err = s.BackupJobs(ctx)
+	if err != nil || len(backups) != 2 || backups[0].ID != "partial-chain" || !backups[0].BackupCompleted {
+		t.Fatalf("partial backup absent: %+v %v", backups, err)
+	}
 }

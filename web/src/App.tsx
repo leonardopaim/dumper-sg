@@ -9,11 +9,10 @@ import {
   RefreshCw,
   RotateCcw,
   Settings as SettingsIcon,
-  Terminal,
   X,
 } from "lucide-react";
 import { api, errorMessage } from "./api";
-import { Alert, Badge, Button, Modal, isActive } from "./components/ui";
+import { Alert, Button, Modal, isActive } from "./components/ui";
 import { JobMonitor } from "./components/JobMonitor";
 import {
   OperationFeedbackProvider,
@@ -32,6 +31,7 @@ import { Databases } from "./pages/Databases";
 import { Restore } from "./pages/Restore";
 import { History } from "./pages/History";
 import { Settings } from "./pages/Settings";
+import { Environment } from "./pages/Environment";
 import type {
   BackupEntry,
   BackupSource,
@@ -52,7 +52,11 @@ const managementNavigation = [
   { id: "profiles", label: "Perfis de banco", icon: Database },
   { id: "settings", label: "Configurações", icon: SettingsIcon },
 ];
-const navigation = [...mainNavigation, ...managementNavigation];
+const navigation = [
+  ...mainNavigation,
+  ...managementNavigation,
+  { id: "environment", label: "Ambiente da aplicação", icon: SettingsIcon },
+];
 const getPage = () =>
   navigation.some((item) => item.id === location.hash.slice(1))
     ? location.hash.slice(1)
@@ -174,7 +178,7 @@ export function App() {
       phase: "starting",
       message: "Validando as configurações e preparando o ambiente…",
     });
-    setMonitorVisible(true);
+    setMonitorVisible(kind !== "database_list");
     try {
       const result = await task();
       if (feedbackRequest.current?.id === id)
@@ -209,7 +213,7 @@ export function App() {
     jobs.accept(job);
     if (first) {
       openedJobs.current.add(job.id);
-      if (!preparing) setMonitorVisible(true);
+      if (!preparing && job.kind !== "database_list") setMonitorVisible(true);
     }
     setHistory((rows) => [job, ...rows.filter((row) => row.id !== job.id)]);
   };
@@ -243,9 +247,7 @@ export function App() {
             href="#dashboard"
             onClick={() => navigate("dashboard")}
           >
-            <span>
-              <HardDriveDownload size={22} />
-            </span>
+            <img src="/dumpersg.png" alt="" width={39} height={39} />
             <strong>
               Dumper<span>SG</span>
             </strong>
@@ -286,17 +288,6 @@ export function App() {
               </strong>
             </div>
             <div className="topbar-status">
-              {(feedback || jobs.selected || activeJob) && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={openMonitor}
-                  aria-label="Ver operação"
-                >
-                  <Terminal size={15} /> Ver operação
-                  {activeJob && <Badge status={activeJob.status} />}
-                </Button>
-              )}
               <nav className="topbar-management" aria-label="Gerenciamento">
                 {managementNavigation.map((item) => (
                   <a
@@ -375,6 +366,7 @@ export function App() {
                     profiles={profiles}
                     active={!!activeJob}
                     onJob={onJob}
+                    onDetails={(job) => (job ? selectJob(job) : openMonitor())}
                     onProfiles={() => navigate("profiles")}
                     onBackup={(source) => {
                       setBackupSource(source);
@@ -435,10 +427,14 @@ export function App() {
                     onSettings={setSettings}
                     reload={reload}
                     refreshDiagnostics={refreshDiagnostics}
+                    onEnvironment={() => navigate("environment")}
                     maintenanceAction={
                       <ApplicationRestart blocked={Boolean(activeJob)} />
                     }
                   />
+                )}
+                {page === "environment" && (
+                  <Environment onBack={() => navigate("settings")} />
                 )}
               </>
             )}
@@ -490,13 +486,15 @@ export function App() {
                       onClick={() => {
                         setMonitorVisible(false);
                         navigate(
-                          jobs.selected?.kind === "backup"
+                          jobs.selected?.kind === "backup" ||
+                            jobs.selected?.kind === "backup_restore"
                             ? "backups"
                             : "history",
                         );
                       }}
                     >
-                      {jobs.selected.kind === "backup"
+                      {jobs.selected.kind === "backup" ||
+                      jobs.selected.kind === "backup_restore"
                         ? "Ver backups"
                         : "Ver histórico"}
                     </Button>

@@ -242,15 +242,11 @@ svg {
   gap: 11px;
   padding: 0 12px 44px;
 }
-.brand > span {
-  background: #355fe7;
-  border-radius: 10px;
+.brand > img {
   width: 39px;
   height: 39px;
-  display: grid;
-  place-items: center;
-  color: white;
-  box-shadow: 0 5px 16px #0d143e;
+  flex-shrink: 0;
+  object-fit: contain;
 }
 .brand strong {
   color: #fff;
@@ -1801,7 +1797,7 @@ tbody tr:hover {
     font-size: 7px;
     letter-spacing: 1.5px;
   }
-  .brand > span {
+  .brand > img {
     width: 34px;
     height: 34px;
   }
@@ -2722,9 +2718,8 @@ tbody tr:hover {
 .database-toolbar {
   display: grid;
   grid-template-columns:
-    minmax(160px, 1fr) minmax(220px, 1.5fr) minmax(145px, 0.7fr)
-    auto;
-  gap: 16px;
+    minmax(240px, 1.5fr) minmax(220px, 1fr) auto;
+  gap: 12px;
   align-items: end;
   padding: 18px 20px;
 }
@@ -2732,7 +2727,23 @@ tbody tr:hover {
   margin: 0;
 }
 .database-toolbar > .button {
-  height: 35px;
+  height: 40px;
+}
+.database-search-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+  min-width: 0;
+}
+.database-search-mode {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+}
+.database-search-controls .search-input svg {
+  top: 50%;
+  transform: translateY(-50%);
 }
 .database-feedback {
   padding: 0 20px 14px;
@@ -2754,9 +2765,30 @@ tbody tr:hover {
 .database-library .empty {
   border: 0;
 }
+.database-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  padding: 42px 20px;
+  text-align: center;
+}
+.database-loading [role="status"] {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: var(--theme-secondary-text, #8093af);
+}
+.database-loading .spin {
+  color: var(--theme-primary, #315de9);
+}
 @media (max-width: 1100px) {
   .database-toolbar {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .database-toolbar > .field {
+    grid-column: 1 / -1;
   }
   .database-toolbar > .button {
     justify-self: start;
@@ -3008,21 +3040,6 @@ tbody tr:hover {
 .backup-library-summary small {
   display: none;
 }
-.database-toolbar {
-  grid-template-columns: minmax(160px, 1fr) minmax(240px, 2fr) auto auto;
-  align-items: end;
-}
-.search-options {
-  align-self: center;
-  font-size: 13px;
-}
-.search-options > summary {
-  cursor: pointer;
-  color: var(--muted);
-}
-.search-options[open] > .field {
-  margin-top: 12px;
-}
 .alert.warning,
 .operation-result.warning {
   background: var(--theme-warning-surface, #fff6e8);
@@ -3137,9 +3154,6 @@ tbody tr:hover {
   margin-right: 6px;
 }
 @media (max-width: 1000px) {
-  .database-toolbar {
-    grid-template-columns: 1fr 1fr;
-  }
   .operation-modal .monitor-message {
     flex-direction: column;
   }
@@ -3212,3 +3226,21 @@ tbody tr:hover {
   font-size: 13px;
   color: var(--muted);
 }
+
+.environment-layout { max-width: 1000px; margin: 0 auto; display: grid; gap: 20px; }
+.environment-layout h2 { font-size: 17px; margin: 0 0 12px; }
+.environment-layout .card-heading h2 { margin-bottom: 0; }
+.environment-details { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0 0; }
+.environment-details .full { grid-column: 1 / -1; }
+.environment-details dt { color: var(--theme-text-muted); font-size: 12px; margin-bottom: 5px; }
+.environment-details dd { margin: 0; overflow-wrap: anywhere; }
+.environment-images, .environment-directories { display: grid; gap: 16px; }
+.environment-images > div, .environment-directories > div { border-top: 1px solid var(--theme-border); padding-top: 14px; }
+.environment-images .badge { margin-left: 12px; }
+.environment-images code, .environment-directories code { display: block; overflow-wrap: anywhere; margin: 8px 0; }
+.workflow-stages { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 20px; }
+.workflow-stages p { width: 100%; margin: 0; overflow-wrap: anywhere; }
+.backup-restore-options { margin-top: 20px; }
+.backup-restore-options h2 { margin-top: 20px; font-size: 16px; }
+.backup-restore-options > p { color: var(--theme-text-muted); font-size: 13px; }
+@media (max-width: 640px) { .environment-details { grid-template-columns: 1fr; } .environment-images .badge { display: inline-flex; margin: 8px 0; } }

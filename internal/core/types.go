@@ -54,15 +54,22 @@ func (p Profile) Public() Profile {
 }
 
 type BackupRequest struct {
-	ProfileID      int64    `json:"profile_id"`
-	Database       string   `json:"database"`
-	DestinationDir string   `json:"destination_dir"`
-	Threads        int      `json:"threads"`
-	Compress       bool     `json:"compress"`
-	SSL            bool     `json:"ssl"`
-	NonLocking     *bool    `json:"non_locking,omitempty"`
-	IgnoreRegex    string   `json:"ignore_regex"`
-	Tables         []string `json:"tables"`
+	ProfileID      int64               `json:"profile_id"`
+	Database       string              `json:"database"`
+	DestinationDir string              `json:"destination_dir"`
+	Threads        int                 `json:"threads"`
+	Compress       bool                `json:"compress"`
+	SSL            bool                `json:"ssl"`
+	NonLocking     *bool               `json:"non_locking,omitempty"`
+	IgnoreRegex    string              `json:"ignore_regex"`
+	Tables         []string            `json:"tables"`
+	Restore        *RestoreDestination `json:"restore,omitempty"`
+}
+type RestoreDestination struct {
+	ProfileID       int64  `json:"profile_id"`
+	TargetDatabase  string `json:"target_database"`
+	Threads         int    `json:"threads"`
+	OverwriteTables bool   `json:"overwrite_tables"`
 }
 type TableListRequest struct {
 	ProfileID int64  `json:"profile_id"`
@@ -88,23 +95,30 @@ type DatabaseRequest struct {
 	Database  string `json:"database"`
 }
 type Job struct {
-	ID              string `json:"id"`
-	Kind            string `json:"kind"`
-	Status          string `json:"status"`
-	ProfileID       int64  `json:"profile_id"`
-	ProfileName     string `json:"profile_name"`
-	Database        string `json:"database"`
-	Path            string `json:"path"`
-	StartedAt       string `json:"started_at"`
-	FinishedAt      string `json:"finished_at,omitempty"`
-	Progress        int    `json:"progress"`
-	Message         string `json:"message"`
-	ExitCode        *int   `json:"exit_code,omitempty"`
-	WarningCount    int    `json:"warning_count,omitempty"`
-	WarningMessage  string `json:"warning_message,omitempty"`
-	PartialResult   bool   `json:"partial_result,omitempty"`
-	CleanupRequired bool   `json:"cleanup_required,omitempty"`
-	DockerIdentity  string `json:"docker_identity,omitempty"`
+	ID                string `json:"id"`
+	Kind              string `json:"kind"`
+	Status            string `json:"status"`
+	ProfileID         int64  `json:"profile_id"`
+	ProfileName       string `json:"profile_name"`
+	Database          string `json:"database"`
+	Path              string `json:"path"`
+	StartedAt         string `json:"started_at"`
+	FinishedAt        string `json:"finished_at,omitempty"`
+	Progress          int    `json:"progress"`
+	Message           string `json:"message"`
+	ExitCode          *int   `json:"exit_code,omitempty"`
+	WarningCount      int    `json:"warning_count,omitempty"`
+	WarningMessage    string `json:"warning_message,omitempty"`
+	PartialResult     bool   `json:"partial_result,omitempty"`
+	CleanupRequired   bool   `json:"cleanup_required,omitempty"`
+	DockerIdentity    string `json:"docker_identity,omitempty"`
+	Phase             string `json:"phase,omitempty"`
+	BackupCompleted   bool   `json:"backup_completed,omitempty"`
+	TargetProfileID   int64  `json:"target_profile_id,omitempty"`
+	TargetProfileName string `json:"target_profile_name,omitempty"`
+	TargetDatabase    string `json:"target_database,omitempty"`
+	TargetHost        string `json:"target_host,omitempty"`
+	TargetPort        int    `json:"target_port,omitempty"`
 }
 type Event struct {
 	Sequence int64  `json:"sequence"`

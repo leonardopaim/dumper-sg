@@ -25,7 +25,7 @@ function Get-TaskPort {
 function Invoke-TaskAPI([string]$Route, [object]$Body, [string]$Method = 'Post') {
     $taskJSON = $Body | ConvertTo-Json -Depth 8 -Compress
     $taskResponse = Invoke-RestMethod -Uri ($taskBase + $Route) -Method $Method -Headers $taskHeaders -ContentType 'application/json; charset=utf-8' -Body ([System.Text.Encoding]::UTF8.GetBytes($taskJSON))
-    if ($taskResponse.kind -in @('backup','restore','table_list','connection_test','create_database') -and $taskResponse.id -is [string] -and $taskResponse.id -match '^[a-f0-9]{32}$') { $taskOwnedJobs.Add($taskResponse.id) }
+    if ($taskResponse.kind -in @('backup','backup_restore','restore','table_list','connection_test','create_database') -and $taskResponse.id -is [string] -and $taskResponse.id -match '^[a-f0-9]{32}$') { $taskOwnedJobs.Add($taskResponse.id) }
     return $taskResponse
 }
 function Wait-DumperJob([object]$Job, [string]$ExpectedStatus = 'succeeded') {
@@ -80,6 +80,18 @@ try {
     Wait-DumperJob (Invoke-TaskAPI '/api/v1/restores' @{profile_id=$taskProfile.id;backup_dir=$taskBackup.path;target_database='qa_restore';threads=2;overwrite_tables=$false}) | Out-Null
     $taskRows = Invoke-TaskDocker @('exec',$taskContainer,'mysql','--protocol=TCP','--host=127.0.0.1','--user=root',('--password=' + $taskPassword),'--batch','--skip-column-names',"--execute=SELECT GROUP_CONCAT(CONCAT(id,':',label) ORDER BY id SEPARATOR '|') FROM qa_restore.sample;")
     if ($taskRows -notmatch '1:alpha\|2:beta') { throw 'Dados restaurados divergentes.' }
+    $taskEnvironment = Invoke-RestMethod -Uri ($taskBase + '/api/v1/environment')
+    if (-not $taskEnvironment.docker.available -or $taskEnvironment.docker.runtime -ne 'wsl' -or $taskEnvironment.docker.distribution -ne $WslDistro -or -not $taskEnvironment.docker.backup_mount_accessible) { throw 'Ambiente efetivo WSL nao corresponde ao executor.' }
+    $taskCustomBackups = Join-Path $taskData 'chain backups'
+    New-Item -ItemType Directory -Path $taskCustomBackups | Out-Null
+    $taskChain = Wait-DumperJob (Invoke-TaskAPI '/api/v1/backups' @{profile_id=$taskProfile.id;database='qa_source';destination_dir=$taskCustomBackups;threads=2;compress=$true;non_locking=$true;restore=@{profile_id=$taskProfile.id;target_database='qa_chain_restore';threads=2;overwrite_tables=$false}})
+    if ($taskChain.kind -ne 'backup_restore' -or -not $taskChain.backup_completed -or $taskChain.partial_result) { throw 'Fluxo encadeado nao terminou integralmente.' }
+    $taskChainRows = Invoke-TaskDocker @('exec',$taskContainer,'mysql','--protocol=TCP','--host=127.0.0.1','--user=root',('--password=' + $taskPassword),'--batch','--skip-column-names',"--execute=SELECT GROUP_CONCAT(CONCAT(id,':',label) ORDER BY id SEPARATOR '|') FROM qa_chain_restore.sample;")
+    if ($taskChainRows -notmatch '1:alpha\|2:beta') { throw 'Dados da restauracao automatica divergentes.' }
+    $taskChainPartial = Wait-DumperJob (Invoke-TaskAPI '/api/v1/backups' @{profile_id=$taskProfile.id;database='qa_source';destination_dir=$taskCustomBackups;threads=2;compress=$true;non_locking=$true;restore=@{profile_id=$taskProfile.id;target_database='qa_chain_restore';threads=2;overwrite_tables=$false}}) 'failed'
+    if (-not $taskChainPartial.backup_completed -or -not $taskChainPartial.partial_result) { throw 'Falha na restauracao perdeu o resultado parcial do backup.' }
+    $taskChainCatalog = @(Invoke-RestMethod -Uri ($taskBase + '/api/v1/backups'))
+    if (@($taskChainCatalog | Where-Object { $_.path -eq $taskChainPartial.path -and $_.complete }).Count -ne 1) { throw 'Backup parcial em destino personalizado nao aparece no catalogo.' }
     # Repeat against existing tables: preserve-by-default must fail; explicit
     # overwrite must replace only backed-up tables in the isolated target.
     Wait-DumperJob (Invoke-TaskAPI '/api/v1/restores' @{profile_id=$taskProfile.id;backup_dir=$taskBackup.path;target_database='qa_restore';threads=2;overwrite_tables=$false}) 'failed' | Out-Null
@@ -147,7 +159,7 @@ try {
     } catch {
         if (-not $_.Exception.Response -or [int]$_.Exception.Response.StatusCode -ne 409) { throw }
     }
-    Write-Output 'Integracao WSL aprovada: catalogos de origem/arquivos, selecoes persistidas no perfil, backup e restore seletivos, nomes especiais, sobrescrita restrita e dados conferidos.'
+    Write-Output 'Integracao WSL aprovada: ambiente efetivo, backup com restauracao automatica e resultado parcial, catalogos, selecoes, nomes especiais, sobrescrita restrita e dados conferidos.'
     Write-Output ('Artefatos isolados: ' + $taskData)
 } finally {
     if ($taskProcess -and -not $taskProcess.HasExited -and $taskHeaders) {

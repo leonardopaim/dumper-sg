@@ -43,6 +43,7 @@ type Options struct {
 	Assets           fs.FS
 	BackupDir        string
 	Diagnostics      func(context.Context) core.Diagnostics
+	Environment      func(context.Context) (core.EnvironmentReport, error)
 	Importer         Importer
 	Restart          func(context.Context) error
 	Shutdown         func(context.Context) error
@@ -76,6 +77,7 @@ func New(repo core.Repository, ops Operations, options Options) (*Server, error)
 		writeJSON(w, 200, map[string]string{"status": "ok", "version": "1.0.0"})
 	})
 	mux.HandleFunc("GET /api/v1/diagnostics", s.diagnostics)
+	mux.HandleFunc("GET /api/v1/environment", s.environment)
 	mux.HandleFunc("GET /api/v1/application", s.application)
 	mux.HandleFunc("POST /api/v1/application/restart", s.restart)
 	mux.HandleFunc("POST /api/v1/application/shutdown", s.shutdown)
@@ -210,6 +212,20 @@ func (s *Server) diagnostics(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 	writeJSON(w, 200, s.options.Diagnostics(ctx))
+}
+func (s *Server) environment(w http.ResponseWriter, r *http.Request) {
+	if s.options.Environment == nil {
+		http.Error(w, "Diagnóstico do ambiente indisponível", http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+	defer cancel()
+	report, err := s.options.Environment(ctx)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, 200, report)
 }
 func (s *Server) profiles(w http.ResponseWriter, r *http.Request) {
 	ps, err := s.repo.ListProfiles(r.Context())

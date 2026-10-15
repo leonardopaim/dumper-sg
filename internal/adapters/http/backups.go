@@ -70,7 +70,7 @@ func (s *Server) backupCatalog(ctx context.Context) ([]backupEntry, error) {
 	}
 	for _, job := range jobs {
 		name := filepath.Base(job.Path)
-		if job.Kind != "backup" || !filepath.IsAbs(job.Path) || !backupJobSuffix.MatchString(name) || !strings.HasSuffix(name, "_"+job.ID) {
+		if (job.Kind != "backup" && job.Kind != "backup_restore") || !filepath.IsAbs(job.Path) || !backupJobSuffix.MatchString(name) || !strings.HasSuffix(name, "_"+job.ID) {
 			continue
 		}
 		parent, err := filepath.EvalSymlinks(filepath.Dir(job.Path))

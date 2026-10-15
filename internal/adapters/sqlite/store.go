@@ -397,7 +397,7 @@ func (s *Store) ListJobs(ctx context.Context, limit int) ([]core.Job, error) {
 
 // BackupJobs includes older backup locations outside the paginated history.
 func (s *Store) BackupJobs(ctx context.Context) ([]core.Job, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT payload FROM jobs WHERE json_extract(payload, '$.kind')='backup' ORDER BY started_at DESC, id DESC`)
+	rows, err := s.db.QueryContext(ctx, `SELECT payload FROM jobs WHERE json_extract(payload, '$.kind') IN ('backup','backup_restore') ORDER BY started_at DESC, id DESC`)
 	if err != nil {
 		return nil, err
 	}

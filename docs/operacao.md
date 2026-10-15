@@ -8,8 +8,10 @@ Aplicação local para backups/restores MySQL com **core Go, SQLite e frontend R
 - Backup MyDumper com seleção de tabelas por tamanho, compressão, regex de exclusão e modo sem bloqueio por padrão.
 - Restore MyLoader somente em MySQL local e banco isolado, com confirmação por resumo dos dados e opção explícita de sobrescrita (`--drop-table=DROP`, compatível com MyLoader 1.0.3).
 - Criação do banco destino com as mesmas restrições do restore.
-- Jobs independentes da tela, monitor abaixo do conteúdo principal, barra de progresso estimado, cancelamento e histórico persistido.
-- Layout compacto com campos em colunas no desktop. Painel de processos e logs oculto por padrão, com controle geral Mostrar painel/Ocultar painel sempre acessível na barra superior; a preferência é salva no navegador. A exibição dos eventos dentro do painel tem controle separado.
+- Backup seguido de restauração automática em banco local: habilite a opção na tela de backup, escolha o perfil/banco de destino e confirme o resumo. O banco é criado se necessário, e apenas os objetos exportados são restaurados. O arquivo do backup permanece disponível mesmo se a restauração falhar; o modal distingue esse resultado parcial.
+- Ambiente da aplicação em Configurações → Ver ambiente: transporte Docker/WSL efetivo, daemon, versão, imagens, rede, diretórios e permissões. Atualize a consulta para verificar mudanças no ambiente.
+- Jobs independentes da tela, modal com etapas e resultado, barra de progresso estimado, cancelamento e histórico persistido.
+- Layout compacto com campos em colunas no desktop e opções avançadas recolhidas. O modal pode ser minimizado e reaberto por Ver operação; logs completos ficam disponíveis dentro dele.
 - Diretório de backup configurável, catálogo de backups e importação do SQLite legado.
 
 ## Executar no Windows

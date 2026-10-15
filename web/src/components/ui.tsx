@@ -4,6 +4,7 @@ import type { ReactNode, ButtonHTMLAttributes } from "react";
 import type { JobKind, JobStatus } from "../types";
 export const kinds: Record<JobKind, string> = {
   backup: "Backup",
+  backup_restore: "Backup e restauração",
   restore: "Restauração",
   connection_test: "Teste de conexão",
   create_database: "Criar banco",
@@ -69,7 +70,8 @@ export function Badge({
   partial?: boolean;
   warnings?: boolean;
 }) {
-  const qualified = status === "succeeded" && (partial || warnings);
+  const qualified =
+    (!isActive(status) && partial) || (status === "succeeded" && warnings);
   return (
     <span className={`badge ${qualified ? "partial" : status}`}>
       {isActive(status) && <span className="status-dot" />}

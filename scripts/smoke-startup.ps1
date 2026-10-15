@@ -49,9 +49,9 @@ try {
     }
     if (-not $taskReady) { throw 'Isolated Nginx proxy did not start.' }
     $taskPage = Invoke-WebRequest ($taskProxyUrl + '/backup') -UseBasicParsing
-    if ($taskPage.Content -notmatch 'href="/favicon.svg"') { throw 'Embedded favicon link missing.' }
-    $taskIcon = Invoke-WebRequest ($taskProxyUrl + '/favicon.svg') -UseBasicParsing
-    if ($taskIcon.Headers['Content-Type'] -notlike 'image/svg+xml*') { throw 'SVG not served through proxy.' }
+    if ($taskPage.Content -notmatch 'href="/favicon.ico"') { throw 'Embedded favicon link missing.' }
+    $taskIcon = Invoke-WebRequest ($taskProxyUrl + '/favicon.ico') -UseBasicParsing
+    if ($taskIcon.Headers['Content-Type'] -notmatch '^image/(x-icon|vnd.microsoft.icon)') { throw 'Icon not served through proxy.' }
     $taskSession = Invoke-RestMethod ($taskProxyUrl + '/api/v1/session') -Headers @{ Origin=$taskOrigin }
     $taskHeaders = @{ Origin=$taskOrigin; 'X-DumperSG-Token'=$taskSession.token }
     $taskBody = @{name='isolated nginx QA';host='db.invalid';port=3306;user='qa';password='qa-secret';database='production';threads=2;ssl=$false} | ConvertTo-Json

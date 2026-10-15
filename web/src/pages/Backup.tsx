@@ -14,6 +14,7 @@ import {
   Button,
   Empty,
   Field,
+  Modal,
   PageHeader,
   Toggle,
 } from "../components/ui";
@@ -23,7 +24,12 @@ import type {
   Job,
   Profile,
   Settings,
+  RestoreDestination,
 } from "../types";
+const isLocal = (host: string) =>
+  ["localhost", "127.0.0.1", "::1", "host.docker.internal"].includes(
+    host.trim().toLowerCase(),
+  );
 export function Backup({
   profiles,
   settings,
@@ -60,12 +66,39 @@ export function Backup({
   const databaseInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [restoreAfter, setRestoreAfter] = useState(false);
+  const [confirmation, setConfirmation] = useState(false);
+  const localProfiles = profiles.filter((item) => isLocal(item.host));
+  const [destination, setDestination] = useState<RestoreDestination>({
+    profile_id: localProfiles[0]?.id || 0,
+    target_database: form.database,
+    threads: 0,
+    overwrite_tables: false,
+  });
+  useEffect(() => {
+    setDestination((data) => ({ ...data, target_database: form.database }));
+  }, [form.database]);
+  const target = localProfiles.find(
+    (item) => item.id === destination.profile_id,
+  );
+  const invalidTarget =
+    !target ||
+    !destination.target_database.trim() ||
+    destination.target_database.trim().toLowerCase() ===
+      target.database.trim().toLowerCase();
   const tableSelection = useTableSelection(
     { profile_id: form.profile_id, database: form.database, ssl: form.ssl },
     onJob,
   );
   const emptySelection = tableSelection.selection?.length === 0;
   const profile = profiles.find((item) => item.id === form.profile_id);
+  const sameSource =
+    !!target &&
+    !!profile &&
+    isLocal(profile.host) &&
+    profile.port === target.port &&
+    form.database.trim().toLowerCase() ===
+      destination.target_database.trim().toLowerCase();
   const production =
     profile?.host.trim().toLowerCase().replace(/\.$/, "") ===
     "db.sommusgestor.com";
@@ -112,6 +145,31 @@ export function Backup({
   }, [profiles, form.profile_id, profile?.database, initialSource]);
   const update = <K extends keyof BackupInput>(key: K, value: BackupInput[K]) =>
     setForm((data) => ({ ...data, [key]: value }));
+  const execute = async () => {
+    setBusy(true);
+    setConfirmation(false);
+    setError("");
+    try {
+      const data = {
+        ...form,
+        tables: tableSelection.selection,
+        restore: restoreAfter ? destination : undefined,
+      };
+      if (new TextEncoder().encode(JSON.stringify(data)).length > 65536)
+        throw new Error(
+          "A seleção excede o limite de tamanho da requisição. Reduza a lista ou use todas as tabelas no modo automático.",
+        );
+      onJob(
+        await runOperation(restoreAfter ? "backup_restore" : "backup", () =>
+          api.backup(data),
+        ),
+      );
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError("");
@@ -127,19 +185,15 @@ export function Backup({
       );
       return;
     }
-    setBusy(true);
-    try {
-      const data = { ...form, tables: tableSelection.selection };
-      if (new TextEncoder().encode(JSON.stringify(data)).length > 65536)
-        throw new Error(
-          "A seleção excede o limite de tamanho da requisição. Reduza a lista ou use todas as tabelas no modo automático.",
+    if (restoreAfter) {
+      if (invalidTarget || sameSource) {
+        setError(
+          "Selecione um perfil local e um banco de destino diferente da origem e do banco padrão do perfil.",
         );
-      onJob(await runOperation("backup", () => api.backup(data)));
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
+        return;
+      }
+      setConfirmation(true);
+    } else await execute();
   };
   return (
     <>
@@ -315,6 +369,108 @@ export function Backup({
                 />
               }
             />
+            <section className="operation-section backup-restore-options">
+              <Toggle
+                label="Restaurar no banco local após o backup"
+                checked={restoreAfter}
+                onChange={(value) => {
+                  setRestoreAfter(value);
+                  setError("");
+                }}
+              />
+              {restoreAfter && (
+                <>
+                  <h2>Destino da restauração automática</h2>
+                  <p>
+                    O banco será criado se necessário. Todas as tabelas
+                    incluídas no backup serão restauradas.
+                  </p>
+                  {localProfiles.length === 0 ? (
+                    <Alert warning>
+                      Cadastre um perfil local em Perfis de banco para usar esta
+                      opção.
+                    </Alert>
+                  ) : (
+                    <div className="form-grid">
+                      <Field label="Perfil local de destino" className="full">
+                        <select
+                          required
+                          value={destination.profile_id}
+                          onChange={(event) =>
+                            setDestination({
+                              ...destination,
+                              profile_id: Number(event.target.value),
+                              overwrite_tables: false,
+                            })
+                          }
+                        >
+                          <option value="" disabled>
+                            Selecionar perfil local…
+                          </option>
+                          {localProfiles.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.name} · {item.host}:{item.port}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+                      <Field label="Banco de destino">
+                        <input
+                          required
+                          value={destination.target_database}
+                          onChange={(event) =>
+                            setDestination({
+                              ...destination,
+                              target_database: event.target.value,
+                            })
+                          }
+                          placeholder="banco_restaurado"
+                        />
+                      </Field>
+                      <Field
+                        label="Threads da restauração"
+                        hint={`0 herda ${target?.threads || 8} threads do destino.`}
+                      >
+                        <input
+                          type="number"
+                          min={0}
+                          max={256}
+                          value={destination.threads}
+                          onChange={(event) =>
+                            setDestination({
+                              ...destination,
+                              threads: Number(event.target.value),
+                            })
+                          }
+                        />
+                      </Field>
+                    </div>
+                  )}
+                  <Toggle
+                    label="Sobrescrever tabelas existentes no destino"
+                    checked={destination.overwrite_tables}
+                    onChange={(value) =>
+                      setDestination({
+                        ...destination,
+                        overwrite_tables: value,
+                      })
+                    }
+                  />
+                  {sameSource && (
+                    <Alert>
+                      O banco de destino precisa ser diferente do banco de
+                      origem no mesmo servidor local.
+                    </Alert>
+                  )}
+                  {destination.target_database && invalidTarget && (
+                    <Alert>
+                      O banco de destino precisa ser diferente do banco padrão
+                      do perfil local.
+                    </Alert>
+                  )}
+                </>
+              )}
+            </section>
             {emptySelection && (
               <Alert>
                 Nenhuma tabela selecionada. Ajuste a seleção de tabelas antes de
@@ -330,17 +486,85 @@ export function Backup({
                   active ||
                   tableSelection.loading ||
                   emptySelection ||
-                  unsafeThreads
+                  unsafeThreads ||
+                  (restoreAfter && (invalidTarget || sameSource))
                 }
                 busy={busy}
               >
                 <Archive size={17} />
-                Iniciar backup
+                {restoreAfter
+                  ? "Iniciar backup e restauração"
+                  : "Iniciar backup"}
                 <ArrowRight size={16} />
               </Button>
             </div>
           </div>
         </form>
+      )}
+      {confirmation && (
+        <Modal
+          title="Confirmar backup e restauração"
+          onClose={() => setConfirmation(false)}
+        >
+          <p>
+            O backup será salvo e, após a validação dos arquivos, restaurado
+            automaticamente no destino abaixo.
+          </p>
+          <dl className="restore-summary">
+            <div className="full">
+              <dt>Origem</dt>
+              <dd>
+                {profile?.name} · {profile?.host}:{profile?.port} /{" "}
+                {form.database}
+              </dd>
+            </div>
+            <div className="full">
+              <dt>Destino local</dt>
+              <dd>
+                {target?.name} · {target?.host}:{target?.port} /{" "}
+                {destination.target_database}
+              </dd>
+            </div>
+            <div>
+              <dt>Threads do backup</dt>
+              <dd>{effectiveThreads}</dd>
+            </div>
+            <div>
+              <dt>Threads da restauração</dt>
+              <dd>{destination.threads || target?.threads}</dd>
+            </div>
+            <div>
+              <dt>Tabelas de origem</dt>
+              <dd>
+                {tableSelection.selection
+                  ? `${tableSelection.selection.length} selecionadas`
+                  : "Todas as tabelas"}
+              </dd>
+            </div>
+            <div>
+              <dt>Sobrescrever tabelas existentes</dt>
+              <dd>{destination.overwrite_tables ? "Sim" : "Não"}</dd>
+            </div>
+          </dl>
+          {destination.overwrite_tables && (
+            <Alert>
+              As tabelas existentes no banco de destino poderão ser removidas ou
+              substituídas pelos dados do backup.
+            </Alert>
+          )}
+          <div className="modal-footer">
+            <Button variant="secondary" onClick={() => setConfirmation(false)}>
+              Voltar
+            </Button>
+            <Button
+              variant={destination.overwrite_tables ? "danger" : "primary"}
+              disabled={active || unsafeThreads || invalidTarget || sameSource}
+              onClick={() => void execute()}
+            >
+              Confirmar backup e restauração
+            </Button>
+          </div>
+        </Modal>
       )}
     </>
   );
